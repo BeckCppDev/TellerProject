@@ -243,6 +243,16 @@ namespace Teller
     SDL_ShowWindow(state_->handle);
   }
 
+  void Window::destroy()
+  {
+    if (state_->handle == nullptr)
+    {
+      return;
+    }
+    // 再びcreate()できるようSDL_QuitSubSystemはデストラクタで行う
+    Internal::closeWindow(*state_);
+  }
+
   bool Window::isOpen() const
   {
     return state_->handle != nullptr;

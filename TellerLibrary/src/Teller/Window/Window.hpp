@@ -75,6 +75,10 @@ namespace Teller
     // 失敗したときはisOpen()がfalseのままになる
     virtual void create();
 
+    // 出ていないときは何もしない
+    // 閉じた後もcreate()で再び出せる
+    virtual void destroy();
+
     [[nodiscard]] virtual bool isOpen() const;
 
     [[nodiscard]] virtual std::string getTitle() const;

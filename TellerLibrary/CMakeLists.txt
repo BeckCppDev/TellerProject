@@ -7,6 +7,7 @@ target_sources(TellerLibrary
     BASE_DIRS src
     FILES
       src/Teller.hpp
+      src/Teller/Units/Duration.hpp
       src/Teller/Units/Length.hpp
       src/Teller/Window/Window.hpp
 )

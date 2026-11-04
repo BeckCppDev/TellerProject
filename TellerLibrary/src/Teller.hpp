@@ -1,6 +1,7 @@
 // TellerLibraryの全機能を読み込む
 #pragma once
 
+#include <Teller/Units/Duration.hpp>
 #include <Teller/Units/Length.hpp>
 #include <Teller/Window/Window.hpp>
 
