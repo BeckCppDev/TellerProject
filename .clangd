@@ -1,0 +1,5 @@
+CompileFlags:
+  CompilationDatabase: build/msvc-debug
+  # CMakeLists.txtでclang向けに止めた警告を、MSVC用の設定で解析するときも止める
+  Add:
+    - -Wno-missing-designated-field-initializers

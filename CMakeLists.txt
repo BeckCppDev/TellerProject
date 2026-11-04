@@ -35,4 +35,16 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
   target_compile_options(teller_project_options INTERFACE
     -Wnonportable-include-path
   )
+
+  # 指示付き初期化子の省略の警告を止める
+  if(CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 19)
+    target_compile_options(teller_project_options INTERFACE
+      -Wno-missing-designated-field-initializers
+    )
+  endif()
 endif()
+
+add_subdirectory(TellerLibrary)
+
+# 利用者の立場でライブラリを試す場所
+add_subdirectory(sandbox)
