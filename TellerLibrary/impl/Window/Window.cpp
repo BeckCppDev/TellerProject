@@ -1,4 +1,5 @@
 #include <Window/WindowInternal.hpp>
+#include <Teller/Loop/Quit.hpp>
 
 namespace Teller::Internal
 {
@@ -6,6 +7,8 @@ namespace Teller::Internal
   {
     // SDL_WindowからWindowStateを引くためのプロパティ名
     constexpr const char* statePropertyName = "Teller.WindowState";
+
+    bool eventsHandledByLoop = false;
 
     void logError(const char* what)
     {
@@ -116,6 +119,10 @@ namespace Teller::Internal
           if (WindowState* state = findState(event.window.windowID))
           {
             closeWindow(*state);
+            if (state->config.quitOnClose)
+            {
+              quit();
+            }
           }
           break;
         }
@@ -138,6 +145,11 @@ namespace Teller::Internal
         }
       }
     }
+  }
+
+  void setEventsHandledByLoop(bool handled)
+  {
+    eventsHandledByLoop = handled;
   }
 }
 
@@ -255,6 +267,19 @@ namespace Teller
 
   bool Window::isOpen() const
   {
+    // 自前のループの条件で毎回呼ばれることを当てにする
+    if (!Internal::eventsHandledByLoop && SDL_WasInit(SDL_INIT_EVENTS) != 0)
+    {
+#ifndef NDEBUG
+      static bool warned = false;
+      if (!warned)
+      {
+        warned = true;
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Teller::Window: no LoopController, so events are processed in isOpen(). Using LoopController is recommended");
+      }
+#endif
+      Internal::processEvents();
+    }
     return state_->handle != nullptr;
   }
 

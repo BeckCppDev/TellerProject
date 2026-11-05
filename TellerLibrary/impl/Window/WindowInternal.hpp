@@ -15,6 +15,8 @@ namespace Teller::Internal
     bool videoInitialized = false;
   };
 
-  // メインループができるまでの仮の入口
   void processEvents();
+
+  // falseのときはWindow::isOpen()がprocessEvents()を呼ぶ
+  void setEventsHandledByLoop(bool handled);
 }

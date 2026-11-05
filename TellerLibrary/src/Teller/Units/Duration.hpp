@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Teller/Units/Literals.hpp>
+
 #include <concepts>
 #include <cstdint>
 #include <limits>
@@ -62,7 +64,7 @@ namespace Teller
 
   namespace literals
   {
-    consteval Duration operator""_s(unsigned long long value)
+    consteval Duration operator""_sec(unsigned long long value)
     {
       if (value > static_cast<unsigned long long>(std::numeric_limits<std::int64_t>::max() / 1'000'000))
       {
@@ -72,7 +74,7 @@ namespace Teller
       return Duration::fromMicroseconds(static_cast<std::int64_t>(value) * 1'000'000);
     }
 
-    consteval Duration operator""_s(long double value)
+    consteval Duration operator""_sec(long double value)
     {
       if (value > static_cast<long double>(std::numeric_limits<std::int64_t>::max()) / 1'000'000.0L)
       {

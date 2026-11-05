@@ -54,6 +54,10 @@ namespace Teller
     bool allowFullscreenToggle = true;
 
     bool alwaysOnTop = false;
+
+    // プレイヤーが閉じたときにTeller::quit()を呼ぶ
+    // destroy()では呼ばない
+    bool quitOnClose = true;
   };
 
   namespace Internal
@@ -79,6 +83,8 @@ namespace Teller
     // 閉じた後もcreate()で再び出せる
     virtual void destroy();
 
+    // LoopControllerがないときはOSからの通知もここで処理する
+    // TASで再現できないので推奨しない
     [[nodiscard]] virtual bool isOpen() const;
 
     [[nodiscard]] virtual std::string getTitle() const;
