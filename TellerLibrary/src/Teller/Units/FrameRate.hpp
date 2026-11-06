@@ -5,6 +5,8 @@
 #include <concepts>
 #include <limits>
 
+// Windows.hのマクロに書き換えられることを防ぐため、maxに括弧を付けること
+
 namespace Teller
 {
   // 1秒あたりのフレーム数
@@ -36,7 +38,7 @@ namespace Teller
   {
     consteval FrameRate operator""_fps(unsigned long long value)
     {
-      if (value == 0 || value > static_cast<unsigned long long>(std::numeric_limits<int>::max()))
+      if (value == 0 || value > static_cast<unsigned long long>((std::numeric_limits<int>::max)()))
       {
         // constevalの中で到達するとコンパイルエラーになる
         throw "FrameRate out of range";

@@ -6,6 +6,8 @@
 #include <cstdint>
 #include <limits>
 
+// Windows.hのマクロに書き換えられることを防ぐため、maxに括弧を付けること
+
 namespace Teller
 {
   // 時間の長さ
@@ -66,7 +68,7 @@ namespace Teller
   {
     consteval Duration operator""_sec(unsigned long long value)
     {
-      if (value > static_cast<unsigned long long>(std::numeric_limits<std::int64_t>::max() / 1'000'000))
+      if (value > static_cast<unsigned long long>((std::numeric_limits<std::int64_t>::max)() / 1'000'000))
       {
         // constevalの中で到達するとコンパイルエラーになる
         throw "Duration out of range";
@@ -76,7 +78,7 @@ namespace Teller
 
     consteval Duration operator""_sec(long double value)
     {
-      if (value > static_cast<long double>(std::numeric_limits<std::int64_t>::max()) / 1'000'000.0L)
+      if (value > static_cast<long double>((std::numeric_limits<std::int64_t>::max)()) / 1'000'000.0L)
       {
         throw "Duration out of range";
       }
@@ -85,7 +87,7 @@ namespace Teller
 
     consteval Duration operator""_ms(unsigned long long value)
     {
-      if (value > static_cast<unsigned long long>(std::numeric_limits<std::int64_t>::max() / 1'000))
+      if (value > static_cast<unsigned long long>((std::numeric_limits<std::int64_t>::max)() / 1'000))
       {
         throw "Duration out of range";
       }
@@ -94,7 +96,7 @@ namespace Teller
 
     consteval Duration operator""_ms(long double value)
     {
-      if (value > static_cast<long double>(std::numeric_limits<std::int64_t>::max()) / 1'000.0L)
+      if (value > static_cast<long double>((std::numeric_limits<std::int64_t>::max)()) / 1'000.0L)
       {
         throw "Duration out of range";
       }

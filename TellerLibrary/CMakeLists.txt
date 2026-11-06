@@ -10,6 +10,9 @@ target_sources(TellerLibrary
       src/Teller/Loop/LoopController.hpp
       src/Teller/Loop/Quit.hpp
       src/Teller/Loop/Timer.hpp
+      src/Teller/Smooth/Change.hpp
+      src/Teller/Smooth/Easing.hpp
+      src/Teller/Smooth/Progress.hpp
       src/Teller/Units/Duration.hpp
       src/Teller/Units/FrameRate.hpp
       src/Teller/Units/Length.hpp
@@ -26,6 +29,9 @@ target_sources(TellerLibrary
     impl/Loop/Timer.cpp
     # 利用者がmain()を書かなかったときだけ取り込まれる
     impl/Main/Main.cpp
+    impl/Smooth/Change.cpp
+    impl/Smooth/Transition.cpp
+    impl/Smooth/Transition.hpp
     impl/Window/Window.cpp
     impl/Window/WindowInternal.hpp
 )

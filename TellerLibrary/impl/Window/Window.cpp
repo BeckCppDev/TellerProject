@@ -1,6 +1,8 @@
 #include <Window/WindowInternal.hpp>
 #include <Teller/Loop/Quit.hpp>
 
+#include <cmath>
+
 namespace Teller::Internal
 {
   namespace
@@ -91,9 +93,71 @@ namespace Teller::Internal
 
     void closeWindow(WindowState& state)
     {
+      state.widthTransition.cancel();
+      state.heightTransition.cancel();
+      state.xTransition.cancel();
+      state.yTransition.cancel();
+
       SDL_DestroyWindow(state.handle);
       state.handle = nullptr;
       state.isFullscreen = false;
+    }
+
+    void applyWidth(WindowState& state, int px)
+    {
+      state.config.width = px;
+      if (state.handle != nullptr)
+      {
+        // もう一方の軸はユーザーが変えている可能性があるので実際の値を使う
+        SDL_SetWindowSize(state.handle, px, readOsWindowState(state.handle).height);
+      }
+    }
+
+    void applyHeight(WindowState& state, int px)
+    {
+      state.config.height = px;
+      if (state.handle != nullptr)
+      {
+        SDL_SetWindowSize(state.handle, readOsWindowState(state.handle).width, px);
+      }
+    }
+
+    void applyX(WindowState& state, int px)
+    {
+      state.config.x = px;
+      state.config.centered = false;
+      if (state.handle != nullptr)
+      {
+        SDL_SetWindowPosition(state.handle, px, readOsWindowState(state.handle).y);
+      }
+    }
+
+    void applyY(WindowState& state, int px)
+    {
+      state.config.y = px;
+      state.config.centered = false;
+      if (state.handle != nullptr)
+      {
+        SDL_SetWindowPosition(state.handle, readOsWindowState(state.handle).x, px);
+      }
+    }
+
+    Transition::Handlers makeHandlers(WindowState& state, int OsWindowState::*axis, void (*apply)(WindowState&, int))
+    {
+      return {
+        .read = [&state, axis]
+        {
+          return static_cast<double>(readOsWindowState(state.handle).*axis);
+        },
+        .apply = [&state, apply](double value)
+        {
+          apply(state, static_cast<int>(std::lround(value)));
+        },
+        .canSmooth = [&state]
+        {
+          return state.handle != nullptr;
+        },
+      };
     }
 
     WindowState* findState(SDL_WindowID id)
@@ -105,6 +169,14 @@ namespace Teller::Internal
       }
       return static_cast<WindowState*>(SDL_GetPointerProperty(SDL_GetWindowProperties(handle), statePropertyName, nullptr));
     }
+  }
+
+  WindowState::WindowState()
+    : widthTransition(makeHandlers(*this, &OsWindowState::width, applyWidth))
+    , heightTransition(makeHandlers(*this, &OsWindowState::height, applyHeight))
+    , xTransition(makeHandlers(*this, &OsWindowState::x, applyX))
+    , yTransition(makeHandlers(*this, &OsWindowState::y, applyY))
+  {
   }
 
   void processEvents()
@@ -315,23 +387,14 @@ namespace Teller
     return Internal::readOsWindowState(state_->handle).height;
   }
 
-  void Window::setWidth(Length width)
+  Change Window::setWidth(Length width)
   {
-    state_->config.width = width;
-    if (state_->handle != nullptr)
-    {
-      // もう一方の軸はユーザーが変えている可能性があるので実際の値を使う
-      SDL_SetWindowSize(state_->handle, width.px(), Internal::readOsWindowState(state_->handle).height);
-    }
+    return Change(state_->widthTransition, width.px());
   }
 
-  void Window::setHeight(Length height)
+  Change Window::setHeight(Length height)
   {
-    state_->config.height = height;
-    if (state_->handle != nullptr)
-    {
-      SDL_SetWindowSize(state_->handle, Internal::readOsWindowState(state_->handle).width, height.px());
-    }
+    return Change(state_->heightTransition, height.px());
   }
 
   int Window::getX() const
@@ -352,23 +415,13 @@ namespace Teller
     return Internal::readOsWindowState(state_->handle).y;
   }
 
-  void Window::setX(Length x)
+  Change Window::setX(Length x)
   {
-    state_->config.x = x;
-    state_->config.centered = false;
-    if (state_->handle != nullptr)
-    {
-      SDL_SetWindowPosition(state_->handle, x.px(), Internal::readOsWindowState(state_->handle).y);
-    }
+    return Change(state_->xTransition, x.px());
   }
 
-  void Window::setY(Length y)
+  Change Window::setY(Length y)
   {
-    state_->config.y = y;
-    state_->config.centered = false;
-    if (state_->handle != nullptr)
-    {
-      SDL_SetWindowPosition(state_->handle, Internal::readOsWindowState(state_->handle).x, y.px());
-    }
+    return Change(state_->yTransition, y.px());
   }
 }

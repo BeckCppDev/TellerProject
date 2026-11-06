@@ -12,6 +12,7 @@ namespace Teller::Internal
     {
       std::uint64_t frames = 0;
       int logicFps = 30;
+      bool active = false;
     };
     ClockState clockState;
   }
@@ -19,6 +20,21 @@ namespace Teller::Internal
   void setClockFps(int fps)
   {
     clockState.logicFps = fps;
+  }
+
+  int clockFps()
+  {
+    return clockState.logicFps;
+  }
+
+  void setClockActive(bool active)
+  {
+    clockState.active = active;
+  }
+
+  bool isClockActive()
+  {
+    return clockState.active;
   }
 
   void advanceClock()
@@ -31,12 +47,6 @@ namespace Teller
 {
   ElapsedTime timer()
   {
-    const Internal::ClockState& clockState = Internal::clockState;
-    ElapsedTime result;
-    result.frames = clockState.frames;
-    result.ms = clockState.frames * 1000 / static_cast<std::uint64_t>(clockState.logicFps);
-    result.sec = static_cast<double>(clockState.frames) / clockState.logicFps;
-    result.min = result.sec / 60.0;
-    return result;
+    return ElapsedTime(Internal::clockState.frames, Internal::clockState.logicFps);
   }
 }

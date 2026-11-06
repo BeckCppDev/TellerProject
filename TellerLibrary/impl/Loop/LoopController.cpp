@@ -1,6 +1,7 @@
 #include <Teller/Loop/LoopController.hpp>
 
 #include <Loop/ClockInternal.hpp>
+#include <Smooth/Transition.hpp>
 #include <Window/WindowInternal.hpp>
 
 #include <SDL3/SDL.h>
@@ -56,6 +57,7 @@ namespace Teller
     isActive_ = true;
     Internal::activeLogicFps = Internal::validFps(config_.logic);
     Internal::setClockFps(Internal::activeLogicFps);
+    Internal::setClockActive(true);
     Internal::setEventsHandledByLoop(true);
   }
 
@@ -67,6 +69,7 @@ namespace Teller
     }
     Internal::hasActiveController = false;
     Internal::pacing = {};
+    Internal::setClockActive(false);
     Internal::setEventsHandledByLoop(false);
   }
 
@@ -105,6 +108,7 @@ namespace Teller
     }
 
     Internal::advanceClock();
+    Internal::advanceTransitions();
     Internal::processEvents();
   }
 }

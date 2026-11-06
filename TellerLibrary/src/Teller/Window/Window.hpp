@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Teller/Smooth/Change.hpp>
 #include <Teller/Units/Length.hpp>
 
 #include <memory>
@@ -93,15 +94,19 @@ namespace Teller
     // create()の前は設定値を、後は実際の値を返す
     [[nodiscard]] virtual int getWidth() const;
     [[nodiscard]] virtual int getHeight() const;
-    virtual void setWidth(Length width);
-    virtual void setHeight(Length height);
+
+    // create()の前は.smooth()を付けても即座に反映する
+    virtual Change setWidth(Length width);
+    virtual Change setHeight(Length height);
 
     // create()の前は設定値を、後は実際の値を返す
     // create()の前で指定していない軸は0を返す
     [[nodiscard]] virtual int getX() const;
     [[nodiscard]] virtual int getY() const;
-    virtual void setX(Length x);
-    virtual void setY(Length y);
+
+    // create()の前は.smooth()を付けても即座に反映する
+    virtual Change setX(Length x);
+    virtual Change setY(Length y);
 
   private:
     std::unique_ptr<Internal::WindowState> state_;
