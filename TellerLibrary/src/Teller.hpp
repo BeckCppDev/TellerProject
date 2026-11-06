@@ -4,6 +4,7 @@
 #include <Teller/Loop/LoopController.hpp>
 #include <Teller/Loop/Quit.hpp>
 #include <Teller/Loop/Timer.hpp>
+#include <Teller/Random/Random.hpp>
 #include <Teller/Smooth/Change.hpp>
 #include <Teller/Smooth/Easing.hpp>
 #include <Teller/Smooth/Progress.hpp>
