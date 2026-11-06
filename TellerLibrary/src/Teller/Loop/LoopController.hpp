@@ -26,7 +26,8 @@ namespace Teller
     LoopController(const LoopController&) = delete;
     LoopController& operator=(const LoopController&) = delete;
 
-    // 次の更新時刻まで待ち、timer()と.smooth()の変化を1フレーム進め、OSからの通知を処理する
+    // 次の更新時刻まで待ち、timer()を1フレーム進め、OSからの通知を処理する
+    // 待っている間に.smooth()の変化をそれぞれの頻度で進める
     // 1周期以上遅れたときは遅れを取り戻さない
     virtual void update();
 

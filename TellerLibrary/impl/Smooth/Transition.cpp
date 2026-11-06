@@ -90,7 +90,8 @@ namespace Teller::Internal
 
   SmoothState Transition::smooth(double target, Duration time, Easing easing)
   {
-    const std::int64_t ticks = isClockActive() ? toTicks(time, clockFps()) : 0;
+    const int fps = handlers_.fps();
+    const std::int64_t ticks = isClockActive() ? toTicks(time, fps) : 0;
     if (ticks <= 0 || !handlers_.canSmooth())
     {
       setNow(target);
@@ -122,6 +123,8 @@ namespace Teller::Internal
     easing_ = easing;
     totalTicks_ = ticks;
     elapsedTicks_ = 0;
+    fps_ = fps;
+    startFrame_ = clockFrames();
     return SmoothState(Progress::started, 0.0);
   }
 
@@ -129,6 +132,25 @@ namespace Teller::Internal
   {
     hasTarget_ = false;
     running_ = false;
+  }
+
+  std::optional<double> Transition::nextPosition(std::uint64_t frame) const
+  {
+    if (!running_)
+    {
+      return std::nullopt;
+    }
+
+    // n回目の変化はn×logic÷fps周期目に起きる
+    // TASの再現性のため整数のまま比べる
+    const std::int64_t logicFps = clockFps();
+    const std::int64_t stepPosition = (elapsedTicks_ + 1) * logicFps;
+    const auto passedFrames = static_cast<std::int64_t>(frame - startFrame_);
+    if (stepPosition > passedFrames * fps_)
+    {
+      return std::nullopt;
+    }
+    return static_cast<double>(stepPosition - (passedFrames - 1) * fps_) / static_cast<double>(fps_);
   }
 
   void Transition::advance()
@@ -151,11 +173,28 @@ namespace Teller::Internal
     handlers_.apply(from_ + (to_ - from_) * ease(easing_, t));
   }
 
-  void advanceTransitions()
+  void advanceTransitions(std::uint64_t frame, const std::function<void(double)>& waitUntil)
   {
-    for (Transition* transition : registry())
+    for (;;)
     {
-      transition->advance();
+      Transition* next = nullptr;
+      double nextPosition = 0.0;
+      for (Transition* transition : registry())
+      {
+        const std::optional<double> position = transition->nextPosition(frame);
+        if (position && (next == nullptr || *position < nextPosition))
+        {
+          next = transition;
+          nextPosition = *position;
+        }
+      }
+
+      if (next == nullptr)
+      {
+        return;
+      }
+      waitUntil(nextPosition);
+      next->advance();
     }
   }
 }

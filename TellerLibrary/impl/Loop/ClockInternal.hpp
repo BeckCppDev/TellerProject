@@ -2,6 +2,8 @@
 
 // timer()の時計を進める側の入口
 
+#include <cstdint>
+
 namespace Teller::Internal
 {
   void setClockFps(int fps);
@@ -12,4 +14,5 @@ namespace Teller::Internal
   [[nodiscard]] bool isClockActive();
 
   void advanceClock();
+  [[nodiscard]] std::uint64_t clockFrames();
 }

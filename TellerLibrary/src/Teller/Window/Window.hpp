@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Teller/Smooth/Change.hpp>
+#include <Teller/Units/FrameRate.hpp>
 #include <Teller/Units/Length.hpp>
 
 #include <memory>
@@ -59,6 +60,10 @@ namespace Teller
     // プレイヤーが閉じたときにTeller::quit()を呼ぶ
     // destroy()では呼ばない
     bool quitOnClose = true;
+
+    // .smooth()の変化を1秒あたりに進める回数
+    // 省略するとLoopControllerのlogicと同じになる
+    std::optional<FrameRate> smoothRate;
   };
 
   namespace Internal
@@ -107,6 +112,15 @@ namespace Teller
     // create()の前は.smooth()を付けても即座に反映する
     virtual Change setX(Length x);
     virtual Change setY(Length y);
+
+    // 指定していないときはlogicの値を返す
+    [[nodiscard]] virtual FrameRate getSmoothRate() const;
+
+    // 次に始める変化から使う
+    virtual void setSmoothRate(FrameRate rate);
+
+    // logicと同じに戻す
+    virtual void resetSmoothRate();
 
   private:
     std::unique_ptr<Internal::WindowState> state_;

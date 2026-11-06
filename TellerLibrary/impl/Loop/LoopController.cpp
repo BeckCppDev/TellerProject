@@ -38,6 +38,15 @@ namespace Teller::Internal
 #endif
       return defaultFps;
     }
+
+    void waitUntil(Uint64 targetNs)
+    {
+      const Uint64 now = SDL_GetTicksNS();
+      if (now < targetNs)
+      {
+        SDL_DelayPrecise(targetNs - now);
+      }
+    }
   }
 }
 
@@ -93,22 +102,27 @@ namespace Teller
     // 周期の端数による誤差がたまらないよう、基準の時刻からn回目の時刻を求める
     const auto fps = static_cast<Uint64>(Internal::activeLogicFps);
     const Uint64 periodNs = SDL_NS_PER_SECOND / fps;
+    Uint64 previousNs = pacing.baseNs + pacing.ticksSinceBase * SDL_NS_PER_SECOND / fps;
     ++pacing.ticksSinceBase;
-    const Uint64 targetNs = pacing.baseNs + pacing.ticksSinceBase * SDL_NS_PER_SECOND / fps;
+    Uint64 targetNs = pacing.baseNs + pacing.ticksSinceBase * SDL_NS_PER_SECOND / fps;
 
-    if (now < targetNs)
-    {
-      SDL_DelayPrecise(targetNs - now);
-    }
-    else if (now - targetNs >= periodNs)
+    if (now >= targetNs && now - targetNs >= periodNs)
     {
       // 更新が詰まるのを防ぐため、今を基準にし直す
       pacing.baseNs = now;
       pacing.ticksSinceBase = 0;
+      previousNs = now;
+      targetNs = now;
     }
 
+    // 頻度がlogicより高い変化は周期の途中でも進める
+    Internal::advanceTransitions(Internal::clockFrames() + 1, [previousNs, targetNs](double position)
+    {
+      Internal::waitUntil(previousNs + static_cast<Uint64>(static_cast<double>(targetNs - previousNs) * position));
+    });
+
+    Internal::waitUntil(targetNs);
     Internal::advanceClock();
-    Internal::advanceTransitions();
     Internal::processEvents();
   }
 }

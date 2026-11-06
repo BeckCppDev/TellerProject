@@ -41,6 +41,11 @@ namespace Teller::Internal
   {
     ++clockState.frames;
   }
+
+  std::uint64_t clockFrames()
+  {
+    return clockState.frames;
+  }
 }
 
 namespace Teller

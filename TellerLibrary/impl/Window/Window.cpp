@@ -1,4 +1,5 @@
 #include <Window/WindowInternal.hpp>
+#include <Loop/ClockInternal.hpp>
 #include <Teller/Loop/Quit.hpp>
 
 #include <cmath>
@@ -142,6 +143,24 @@ namespace Teller::Internal
       }
     }
 
+    int effectiveSmoothFps(const WindowState& state)
+    {
+      return state.config.smoothRate ? state.config.smoothRate->fps() : clockFps();
+    }
+
+    // 0以下の頻度は指定がなかったものとして扱う
+    std::optional<FrameRate> validSmoothRate(std::optional<FrameRate> rate)
+    {
+      if (!rate || rate->fps() > 0)
+      {
+        return rate;
+      }
+#ifndef NDEBUG
+      SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Teller::Window: smoothRate must be greater than 0, so logic is used");
+#endif
+      return std::nullopt;
+    }
+
     Transition::Handlers makeHandlers(WindowState& state, int OsWindowState::*axis, void (*apply)(WindowState&, int))
     {
       return {
@@ -156,6 +175,10 @@ namespace Teller::Internal
         .canSmooth = [&state]
         {
           return state.handle != nullptr;
+        },
+        .fps = [&state]
+        {
+          return effectiveSmoothFps(state);
         },
       };
     }
@@ -231,6 +254,7 @@ namespace Teller
     : state_(std::make_unique<Internal::WindowState>())
   {
     state_->config = config;
+    state_->config.smoothRate = Internal::validSmoothRate(config.smoothRate);
     if (config.fullscreen != FullscreenMode::windowed)
     {
       state_->toggleMode = config.fullscreen;
@@ -423,5 +447,20 @@ namespace Teller
   Change Window::setY(Length y)
   {
     return Change(state_->yTransition, y.px());
+  }
+
+  FrameRate Window::getSmoothRate() const
+  {
+    return Internal::effectiveSmoothFps(*state_);
+  }
+
+  void Window::setSmoothRate(FrameRate rate)
+  {
+    state_->config.smoothRate = Internal::validSmoothRate(rate);
+  }
+
+  void Window::resetSmoothRate()
+  {
+    state_->config.smoothRate.reset();
   }
 }
