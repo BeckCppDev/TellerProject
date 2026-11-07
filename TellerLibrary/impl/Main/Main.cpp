@@ -1,3 +1,6 @@
+#include <Loop/ClockInternal.hpp>
+#include <Window/WindowInternal.hpp>
+
 void setup();
 void loop();
 
@@ -8,5 +11,11 @@ int main()
   for (;;)
   {
     loop();
+
+    // LoopControllerがないときは代わりにOSからの通知を処理する
+    if (!Teller::Internal::isClockActive())
+    {
+      Teller::Internal::processEvents();
+    }
   }
 }

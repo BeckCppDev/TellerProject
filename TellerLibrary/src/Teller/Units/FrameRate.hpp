@@ -20,7 +20,9 @@ namespace Teller
     {
     }
 
-    template <std::floating_point T>
+    // trueを1fpsとして受け付けない
+    template <typename T>
+      requires std::floating_point<T> || std::same_as<T, bool>
     FrameRate(T) = delete;
 
     [[nodiscard]] constexpr int fps() const noexcept

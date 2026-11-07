@@ -20,7 +20,9 @@ namespace Teller
     }
 
     // 小数の暗黙の切り捨てを防ぐ
-    template <std::floating_point T>
+    // trueを1pxとして受け付けない
+    template <typename T>
+      requires std::floating_point<T> || std::same_as<T, bool>
     Length(T) = delete;
 
     [[nodiscard]] constexpr int px() const noexcept

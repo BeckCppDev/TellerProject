@@ -13,13 +13,10 @@ namespace Teller::Internal
 
     bool eventsHandledByLoop = false;
 
+    // 配布後の原因調査のためReleaseでも出す
     void logError(const char* what)
     {
-#ifndef NDEBUG
       SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Teller::Window: %s failed: %s", what, SDL_GetError());
-#else
-      static_cast<void>(what);
-#endif
     }
 
     // SDL3の最小・最大サイズでは0が制限なしを表す
@@ -204,6 +201,21 @@ namespace Teller::Internal
 
   void processEvents()
   {
+    // create()の前は受け取る通知がない
+    if (SDL_WasInit(SDL_INIT_EVENTS) == 0)
+    {
+      return;
+    }
+
+#ifndef NDEBUG
+    static bool warned = false;
+    if (!eventsHandledByLoop && !warned)
+    {
+      warned = true;
+      SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Teller::Window: no LoopController, so events are processed without it. Using LoopController is recommended");
+    }
+#endif
+
     SDL_Event event;
     while (SDL_PollEvent(&event))
     {
@@ -364,16 +376,8 @@ namespace Teller
   bool Window::isOpen() const
   {
     // 自前のループの条件で毎回呼ばれることを当てにする
-    if (!Internal::eventsHandledByLoop && SDL_WasInit(SDL_INIT_EVENTS) != 0)
+    if (!Internal::eventsHandledByLoop)
     {
-#ifndef NDEBUG
-      static bool warned = false;
-      if (!warned)
-      {
-        warned = true;
-        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Teller::Window: no LoopController, so events are processed in isOpen(). Using LoopController is recommended");
-      }
-#endif
       Internal::processEvents();
     }
     return state_->handle != nullptr;
