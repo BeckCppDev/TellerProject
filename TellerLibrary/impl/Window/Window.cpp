@@ -56,28 +56,10 @@ namespace Teller::Internal
         return;
       }
 
-      if (mode == FullscreenMode::borderless)
+      if (!SDL_SetWindowFullscreenMode(state.handle, nullptr))
       {
-        if (!SDL_SetWindowFullscreenMode(state.handle, nullptr))
-        {
-          logError("SDL_SetWindowFullscreenMode");
-          return;
-        }
-      }
-      else
-      {
-        SDL_DisplayMode displayMode;
-        const SDL_DisplayID display = SDL_GetDisplayForWindow(state.handle);
-        if (!SDL_GetClosestFullscreenDisplayMode(display, state.config.width.px(), state.config.height.px(), 0.0f, false, &displayMode))
-        {
-          logError("SDL_GetClosestFullscreenDisplayMode");
-          return;
-        }
-        if (!SDL_SetWindowFullscreenMode(state.handle, &displayMode))
-        {
-          logError("SDL_SetWindowFullscreenMode");
-          return;
-        }
+        logError("SDL_SetWindowFullscreenMode");
+        return;
       }
 
       if (!SDL_SetWindowFullscreen(state.handle, true))
@@ -85,7 +67,6 @@ namespace Teller::Internal
         logError("SDL_SetWindowFullscreen");
         return;
       }
-      state.toggleMode = mode;
       state.isFullscreen = true;
     }
 
@@ -209,7 +190,8 @@ namespace Teller::Internal
 
 #ifndef NDEBUG
     static bool warned = false;
-    if (!eventsHandledByLoop && !warned)
+    // 最初のupdate()の前にも来るのでLoopControllerの有無で判断する
+    if (!isClockActive() && !warned)
     {
       warned = true;
       SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Teller::Window: no LoopController, so events are processed without it. Using LoopController is recommended");
@@ -242,7 +224,7 @@ namespace Teller::Internal
           WindowState* state = findState(event.key.windowID);
           if (state != nullptr && state->config.allowFullscreenToggle)
           {
-            applyFullscreen(*state, state->isFullscreen ? FullscreenMode::windowed : state->toggleMode);
+            applyFullscreen(*state, state->isFullscreen ? FullscreenMode::windowed : FullscreenMode::borderless);
           }
           break;
         }
@@ -258,6 +240,11 @@ namespace Teller::Internal
   {
     eventsHandledByLoop = handled;
   }
+
+  bool areEventsHandledByLoop()
+  {
+    return eventsHandledByLoop;
+  }
 }
 
 namespace Teller
@@ -267,10 +254,6 @@ namespace Teller
   {
     state_->config = config;
     state_->config.smoothRate = Internal::validSmoothRate(config.smoothRate);
-    if (config.fullscreen != FullscreenMode::windowed)
-    {
-      state_->toggleMode = config.fullscreen;
-    }
   }
 
   Window::~Window()

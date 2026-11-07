@@ -67,7 +67,6 @@ namespace Teller
     Internal::activeLogicFps = Internal::validFps(config_.logic);
     Internal::setClockFps(Internal::activeLogicFps);
     Internal::setClockActive(true);
-    Internal::setEventsHandledByLoop(true);
   }
 
   LoopController::~LoopController()
@@ -88,6 +87,9 @@ namespace Teller
     {
       return;
     }
+
+    // 呼ばれるまではisOpen()と同梱のmain()が通知を処理する
+    Internal::setEventsHandledByLoop(true);
 
     Internal::PacingState& pacing = Internal::pacing;
     const Uint64 now = SDL_GetTicksNS();

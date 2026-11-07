@@ -14,7 +14,6 @@ namespace Teller::Internal
 
     WindowConfig config;
     SDL_Window* handle = nullptr;
-    FullscreenMode toggleMode = FullscreenMode::borderless;
     bool isFullscreen = false;
     bool videoInitialized = false;
 
@@ -26,6 +25,7 @@ namespace Teller::Internal
 
   void processEvents();
 
-  // falseのときはWindow::isOpen()がprocessEvents()を呼ぶ
+  // falseのときはWindow::isOpen()と同梱のmain()がprocessEvents()を呼ぶ
   void setEventsHandledByLoop(bool handled);
+  [[nodiscard]] bool areEventsHandledByLoop();
 }

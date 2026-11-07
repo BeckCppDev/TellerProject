@@ -16,8 +16,6 @@ namespace Teller
     windowed,
     // 解像度を変えずに画面いっぱいに広げる
     borderless,
-    // 解像度をウインドウのサイズに合わせて切り替える
-    exclusive,
   };
 
   // 指定する項目は宣言の順番どおりに並べる
