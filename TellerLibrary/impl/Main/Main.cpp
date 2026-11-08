@@ -1,3 +1,4 @@
+#include <Graphics/DrawBus.hpp>
 #include <Window/WindowInternal.hpp>
 
 void setup();
@@ -11,9 +12,10 @@ int main()
   {
     loop();
 
-    // update()が呼ばれていないときは代わりに通知を処理する
+    // update()が呼ばれていないときは代わりに描画と通知を処理する
     if (!Teller::Internal::areEventsHandledByLoop())
     {
+      Teller::Internal::deliverDraw();
       Teller::Internal::processEvents();
     }
   }

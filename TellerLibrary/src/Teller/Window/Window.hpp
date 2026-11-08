@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Teller/Smooth/Change.hpp>
+#include <Teller/Units/Color.hpp>
 #include <Teller/Units/FrameRate.hpp>
 #include <Teller/Units/Length.hpp>
 
@@ -11,11 +12,23 @@
 
 namespace Teller
 {
+  class Asset;
+
   enum class FullscreenMode
   {
     windowed,
     // 解像度を変えずに画面いっぱいに広げる
     borderless,
+  };
+
+  // ウインドウの大きさを変えたときの描画の動き
+  enum class Resize
+  {
+    // ゲーム画面ごと拡大する
+    // 縦横比が違うときは余白を黒い帯で塗る
+    scale,
+    // ゲーム画面は拡大せず、見える範囲を広げる
+    expand,
   };
 
   // 指定する項目は宣言の順番どおりに並べる
@@ -44,6 +57,12 @@ namespace Teller
     float aspectRatio = 0.0f;
 
     bool resizable = false;
+
+    Resize resizeMode = Resize::scale;
+
+    // ゲーム画面の背景
+    // scaleの黒い帯には使わない
+    Color backgroundColor = Color::black;
 
     // タイトルバーと枠を表示する
     bool decorated = true;
@@ -87,9 +106,16 @@ namespace Teller
     // 閉じた後もcreate()で再び出せる
     virtual void destroy();
 
-    // LoopControllerがないときはOSからの通知もここで処理する
+    // LoopController::update()を一度も呼んでいない間は、描画とOSからの通知もここで処理する
     // TASで再現できないので推奨しない
     [[nodiscard]] virtual bool isOpen() const;
+
+    // create()の前に呼んでもよい
+    // 重ねて購読しても1回分として扱う
+    virtual void subscribe(const Asset& asset);
+
+    // 購読していないAssetの内容は無視する
+    virtual void unsubscribe(const Asset& asset);
 
     [[nodiscard]] virtual std::string getTitle() const;
     virtual void setTitle(std::string_view title);

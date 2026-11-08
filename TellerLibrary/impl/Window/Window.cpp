@@ -1,7 +1,9 @@
 #include <Window/WindowInternal.hpp>
 #include <Loop/ClockInternal.hpp>
+#include <Teller/Asset/Asset.hpp>
 #include <Teller/Loop/Quit.hpp>
 
+#include <algorithm>
 #include <cmath>
 
 namespace Teller::Internal
@@ -76,6 +78,16 @@ namespace Teller::Internal
       state.heightTransition.cancel();
       state.xTransition.cancel();
       state.yTransition.cancel();
+
+      removeDrawListener(state);
+
+      // GPU上の画像はレンダラーの破棄で消えるので、一覧だけを空にする
+      state.textures.clear();
+      if (state.renderer != nullptr)
+      {
+        SDL_DestroyRenderer(state.renderer);
+        state.renderer = nullptr;
+      }
 
       SDL_DestroyWindow(state.handle);
       state.handle = nullptr;
@@ -161,6 +173,27 @@ namespace Teller::Internal
       };
     }
 
+    // create()の前に読み込んだ画像にも対応するため、最初に描くときに作る
+    SDL_Texture* findTexture(WindowState& state, const ImageData& image)
+    {
+      if (const auto found = state.textures.find(&image); found != state.textures.end())
+      {
+        return found->second;
+      }
+
+      SDL_Texture* texture = SDL_CreateTextureFromSurface(state.renderer, image.surface);
+      if (texture == nullptr)
+      {
+        logError("SDL_CreateTextureFromSurface");
+        return nullptr;
+      }
+
+      // 既定のままだと拡大したときにぼやける
+      SDL_SetTextureScaleMode(texture, SDL_SCALEMODE_NEAREST);
+      state.textures.emplace(&image, texture);
+      return texture;
+    }
+
     WindowState* findState(SDL_WindowID id)
     {
       SDL_Window* handle = SDL_GetWindowFromID(id);
@@ -178,6 +211,74 @@ namespace Teller::Internal
     , xTransition(makeHandlers(*this, &OsWindowState::x, applyX))
     , yTransition(makeHandlers(*this, &OsWindowState::y, applyY))
   {
+  }
+
+  void WindowState::onFrame(std::span<const DrawMessage> messages)
+  {
+    if (renderer == nullptr)
+    {
+      return;
+    }
+
+    // 黒い帯の部分も含めて塗る
+    SDL_SetRenderDrawColor(renderer, 0, 0, 0, SDL_ALPHA_OPAQUE);
+    SDL_RenderClear(renderer);
+
+    // expandは見える範囲が変わるので、今の大きさを使う
+    int screenWidth = gameWidth;
+    int screenHeight = gameHeight;
+    if (config.resizeMode == Resize::expand)
+    {
+      SDL_GetCurrentRenderOutputSize(renderer, &screenWidth, &screenHeight);
+    }
+
+    const Color& background = config.backgroundColor;
+    SDL_SetRenderDrawColor(renderer, background.r(), background.g(), background.b(), SDL_ALPHA_OPAQUE);
+    const SDL_FRect screen{ 0.0f, 0.0f, static_cast<float>(screenWidth), static_cast<float>(screenHeight) };
+    SDL_RenderFillRect(renderer, &screen);
+
+    // 利用者の座標は中央が原点でYが上向き、SDL3は左上が原点でYが下向き
+
+    for (const DrawMessage& message : messages)
+    {
+      if (std::find(subscriptions.begin(), subscriptions.end(), message.image->source) == subscriptions.end())
+      {
+        continue;
+      }
+
+      SDL_Texture* texture = findTexture(*this, *message.image);
+      if (texture == nullptr)
+      {
+        continue;
+      }
+
+      const auto width = static_cast<float>(message.image->surface->w);
+      const auto height = static_cast<float>(message.image->surface->h);
+      const SDL_FRect destination
+      {
+        static_cast<float>(screenWidth / 2.0 + message.x) - width / 2.0f,
+        static_cast<float>(screenHeight / 2.0 - message.y) - height / 2.0f,
+        width,
+        height,
+      };
+      SDL_RenderTexture(renderer, texture, nullptr, &destination);
+    }
+
+    SDL_RenderPresent(renderer);
+  }
+
+  void WindowState::onImageReleased(const ImageData* image)
+  {
+    if (const auto found = textures.find(image); found != textures.end())
+    {
+      SDL_DestroyTexture(found->second);
+      textures.erase(found);
+    }
+  }
+
+  void WindowState::onSourceReleased(const void* source)
+  {
+    std::erase(subscriptions, source);
   }
 
   void processEvents()
@@ -326,6 +427,24 @@ namespace Teller
 
     SDL_SetPointerProperty(SDL_GetWindowProperties(state_->handle), Internal::statePropertyName, state_.get());
 
+    if (state_->gameWidth == 0)
+    {
+      state_->gameWidth = config.width.px();
+      state_->gameHeight = config.height.px();
+    }
+
+    state_->renderer = SDL_CreateRenderer(state_->handle, nullptr);
+    if (state_->renderer == nullptr)
+    {
+      Internal::logError("SDL_CreateRenderer");
+    }
+    else if (config.resizeMode == Resize::scale)
+    {
+      // ゲーム画面の座標のまま描くと、SDL3が拡大と黒い帯の処理を行う
+      SDL_SetRenderLogicalPresentation(state_->renderer, state_->gameWidth, state_->gameHeight, SDL_LOGICAL_PRESENTATION_LETTERBOX);
+    }
+    Internal::addDrawListener(*state_);
+
     if (config.minWidth || config.minHeight)
     {
       SDL_SetWindowMinimumSize(state_->handle, Internal::pxOrZero(config.minWidth), Internal::pxOrZero(config.minHeight));
@@ -361,9 +480,28 @@ namespace Teller
     // 自前のループの条件で毎回呼ばれることを当てにする
     if (!Internal::eventsHandledByLoop)
     {
+      Internal::deliverDraw();
       Internal::processEvents();
     }
     return state_->handle != nullptr;
+  }
+
+  void Window::subscribe(const Asset& asset)
+  {
+    const void* source = &asset;
+    Internal::noteSubscribed(source);
+
+    std::vector<const void*>& subscriptions = state_->subscriptions;
+    if (std::find(subscriptions.begin(), subscriptions.end(), source) == subscriptions.end())
+    {
+      subscriptions.push_back(source);
+    }
+  }
+
+  void Window::unsubscribe(const Asset& asset)
+  {
+    const void* source = &asset;
+    std::erase(state_->subscriptions, source);
   }
 
   std::string Window::getTitle() const

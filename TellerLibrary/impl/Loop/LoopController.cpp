@@ -1,5 +1,6 @@
 #include <Teller/Loop/LoopController.hpp>
 
+#include <Graphics/DrawBus.hpp>
 #include <Loop/ClockInternal.hpp>
 #include <Smooth/Transition.hpp>
 #include <Window/WindowInternal.hpp>
@@ -90,6 +91,9 @@ namespace Teller
 
     // 呼ばれるまではisOpen()と同梱のmain()が通知を処理する
     Internal::setEventsHandledByLoop(true);
+
+    // 待つ前に描き、処理の直後に画面へ出す
+    Internal::deliverDraw();
 
     Internal::PacingState& pacing = Internal::pacing;
     const Uint64 now = SDL_GetTicksNS();

@@ -11,7 +11,7 @@ namespace Teller
     FrameRate logic = 30;
 
     // 描画の更新回数
-    // 描画の仕組みができるまでは使わない
+    // 補間の仕組みができるまでは使わず、logicの周期で描く
     FrameRate display = 30;
   };
 
@@ -26,7 +26,7 @@ namespace Teller
     LoopController(const LoopController&) = delete;
     LoopController& operator=(const LoopController&) = delete;
 
-    // 次の更新時刻まで待ち、timer()を1フレーム進め、OSからの通知を処理する
+    // Asset::update()で確定した内容を描き、次の更新時刻まで待ち、timer()を1フレーム進め、OSからの通知を処理する
     // 待っている間に.smooth()の変化をそれぞれの頻度で進める
     // 1周期以上遅れたときは遅れを取り戻さない
     virtual void update();
