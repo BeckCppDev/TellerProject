@@ -46,9 +46,10 @@ namespace Teller::Internal
 #endif
   }
 
-  ImageData::ImageData(const void* source, SDL_Surface* surface)
+  ImageData::ImageData(const void* source, std::filesystem::path writtenPath, std::filesystem::path sourceDirectory)
     : source(source)
-    , surface(surface)
+    , writtenPath(std::move(writtenPath))
+    , sourceDirectory(std::move(sourceDirectory))
   {
   }
 

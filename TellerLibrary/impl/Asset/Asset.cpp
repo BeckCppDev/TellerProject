@@ -12,9 +12,7 @@ namespace Teller::Internal
 {
   struct AssetState
   {
-    std::filesystem::path sourceDirectory;
-
-    // キーは探した結果のパス
+    // キーは、書かれたパスをimage()を書いたcppのフォルダで補ったもの
     std::unordered_map<std::string, std::shared_ptr<ImageData>> images;
   };
 
@@ -35,29 +33,44 @@ namespace Teller::Internal
 
     // 配布先には開発時のフォルダがないので、実行ファイルの隣を優先する
     // 絶対パスは演算子/がそのまま返す
-    std::string resolvePath(const AssetState& state, std::string_view path)
+    std::string resolvePath(const ImageData& image)
     {
-      const std::filesystem::path relative = toPath(path);
-
       if (const char* basePath = SDL_GetBasePath())
       {
-        const std::string besideExecutable = toUtf8(toPath(basePath) / relative);
+        const std::string besideExecutable = toUtf8(toPath(basePath) / image.writtenPath);
         if (SDL_GetPathInfo(besideExecutable.c_str(), nullptr))
         {
           return besideExecutable;
         }
       }
-      return toUtf8(state.sourceDirectory / relative);
+      return toUtf8(image.sourceDirectory / image.writtenPath);
+    }
+
+    bool loadImage(ImageData& image)
+    {
+      image.loadAttempted = true;
+      if (image.surface != nullptr)
+      {
+        return true;
+      }
+
+      const std::string resolved = resolvePath(image);
+      image.surface = SDL_LoadPNG(resolved.c_str());
+      if (image.surface == nullptr)
+      {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Teller::Image: failed to load %s: %s", resolved.c_str(), SDL_GetError());
+        return false;
+      }
+      return true;
     }
   }
 }
 
 namespace Teller
 {
-  Asset::Asset(std::source_location location)
-    : state_(std::make_unique<Internal::AssetState>())
+  void Internal::AssetStateDeleter::operator()(AssetState* state) const noexcept
   {
-    state_->sourceDirectory = Internal::toPath(location.file_name()).parent_path();
+    delete state;
   }
 
   Asset::~Asset()
@@ -65,24 +78,31 @@ namespace Teller
     Internal::notifySourceReleased(this);
   }
 
-  Image Asset::loadImage(std::string_view path)
+  // コンストラクタを定数初期化にするため、最初に使うときに作る
+  Internal::AssetState& Asset::state()
   {
-    const std::string resolved = Internal::resolvePath(*state_, path);
+    if (state_ == nullptr)
+    {
+      state_.reset(new Internal::AssetState);
+    }
+    return *state_;
+  }
 
-    if (const auto found = state_->images.find(resolved); found != state_->images.end())
+  // グローバル変数の初期化で呼ばれるのでファイルには触らない
+  Image Asset::image(AssetPath path)
+  {
+    const std::filesystem::path writtenPath = Internal::toPath(path.path());
+    const std::filesystem::path sourceDirectory = Internal::toPath(path.location().file_name()).parent_path();
+    const std::string key = Internal::toUtf8(sourceDirectory / writtenPath);
+
+    auto& images = state().images;
+    if (const auto found = images.find(key); found != images.end())
     {
       return Image(found->second);
     }
 
-    SDL_Surface* surface = SDL_LoadPNG(resolved.c_str());
-    if (surface == nullptr)
-    {
-      SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Teller::Asset: failed to load %s: %s", resolved.c_str(), SDL_GetError());
-      return Image();
-    }
-
-    const auto data = std::make_shared<Internal::ImageData>(this, surface);
-    state_->images.emplace(resolved, data);
+    const auto data = std::make_shared<Internal::ImageData>(this, writtenPath, sourceDirectory);
+    images.emplace(key, data);
     return Image(data);
   }
 
@@ -96,6 +116,16 @@ namespace Teller
   {
   }
 
+  bool Image::load() const
+  {
+    const std::shared_ptr<Internal::ImageData> data = data_.lock();
+    if (data == nullptr)
+    {
+      return false;
+    }
+    return Internal::loadImage(*data);
+  }
+
   void Image::show(Position position) const
   {
     const std::shared_ptr<Internal::ImageData> data = data_.lock();
@@ -106,10 +136,19 @@ namespace Teller
       if (!warned)
       {
         warned = true;
-        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Teller::Image: show() was called on an image that is not loaded");
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Teller::Image: show() was called on an image that was not given by Asset::image() or whose Asset was destroyed");
       }
 #endif
       return;
+    }
+
+    // 毎周期読み直してログが溢れないよう、自動で読むのは初回だけにする
+    if (data->surface == nullptr)
+    {
+      if (data->loadAttempted || !Internal::loadImage(*data))
+      {
+        return;
+      }
     }
     Internal::publishDraw({ data, position.x(), position.y() });
   }

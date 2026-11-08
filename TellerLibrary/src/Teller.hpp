@@ -2,6 +2,7 @@
 #pragma once
 
 #include <Teller/Asset/Asset.hpp>
+#include <Teller/Asset/AssetPath.hpp>
 #include <Teller/Asset/Image.hpp>
 #include <Teller/Loop/LoopController.hpp>
 #include <Teller/Loop/Quit.hpp>

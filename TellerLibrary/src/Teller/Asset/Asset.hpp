@@ -1,37 +1,41 @@
 #pragma once
 
+#include <Teller/Asset/AssetPath.hpp>
 #include <Teller/Asset/Image.hpp>
 
 #include <memory>
-#include <source_location>
-#include <string_view>
 
 namespace Teller
 {
   namespace Internal
   {
     struct AssetState;
+
+    // constexprのコンストラクタが不完全型の破棄を要求しないようにする
+    struct AssetStateDeleter
+    {
+      void operator()(AssetState* state) const noexcept;
+    };
   }
 
   // 画像などのアセットをまとめて持つ
-  // 読み込んだアセットはこのインスタンスの破棄とともに全て消える
+  // 指定したアセットはこのインスタンスの破棄とともに全て消える
   // 描くにはWindow::subscribe()で購読する
   class Asset
   {
   public:
-    // locationは相対パスの基準になるので通常は省略する
-    // std::make_unique<Asset>()では標準ライブラリの場所になるため、std::source_location::current()を渡す
-    explicit Asset(std::source_location location = std::source_location::current());
+    // 定数初期化にして、別のcppのグローバル変数の初期化からもimage()を呼べるようにする
+    constexpr Asset() noexcept = default;
     virtual ~Asset();
 
     Asset(const Asset&) = delete;
     Asset& operator=(const Asset&) = delete;
 
-    // PNGを読み込む
-    // 相対パスは実行ファイルの隣、このインスタンスを宣言したcppの位置の順に探す
-    // 同じパスは1回目に読み込んだものを返す
-    // 失敗したときはログを出し、何も描かないImageを返す
-    virtual Image loadImage(std::string_view path);
+    // 画像を指定する
+    // ファイルはImage::load()か最初のImage::show()で読む
+    // 相対パスは実行ファイルの隣、image()を書いたcppの位置の順に探す
+    // 同じパスは同じ画像を指す
+    virtual Image image(AssetPath path);
 
     // このAssetの画像へのshow()を確定する
     // 確定しなかったshow()は描かれない
@@ -39,6 +43,8 @@ namespace Teller
     virtual void update();
 
   private:
-    std::unique_ptr<Internal::AssetState> state_;
+    Internal::AssetState& state();
+
+    std::unique_ptr<Internal::AssetState, Internal::AssetStateDeleter> state_;
   };
 }

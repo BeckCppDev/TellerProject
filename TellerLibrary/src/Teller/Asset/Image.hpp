@@ -13,15 +13,20 @@ namespace Teller
     struct ImageData;
   }
 
-  // Asset::loadImage()が返す画像
+  // Asset::image()が返す画像
   // 実体はAssetが持ち、コピーしても同じ画像を指す
-  // 読み込む前とAssetの破棄後はshow()が何も描かない
+  // 何も指定していないImageとAssetの破棄後は、show()が何も描かない
   class Image
   {
   public:
     Image() = default;
 
+    // 読み込み済みなら何もしない
+    // 失敗したときはログを出してfalseを返し、次の呼び出しで読み直す
+    bool load() const;
+
     // 画像の中心を指定した位置に置く
+    // 読み込んでいなければ初回だけ読む
     // Asset::update()で確定するまで描かれず、1周期だけ有効
     // 同じAssetの中では後に呼んだものが手前になる
     void show(Position position = Position::central) const;

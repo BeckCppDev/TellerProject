@@ -2,6 +2,7 @@
 
 #include <SDL3/SDL.h>
 
+#include <filesystem>
 #include <memory>
 #include <span>
 
@@ -14,7 +15,7 @@ namespace Teller::Internal
   // GPU上の画像はウインドウごとに要るのでWindowが持つ
   struct ImageData
   {
-    ImageData(const void* source, SDL_Surface* surface);
+    ImageData(const void* source, std::filesystem::path writtenPath, std::filesystem::path sourceDirectory);
     ~ImageData();
 
     ImageData(const ImageData&) = delete;
@@ -22,7 +23,16 @@ namespace Teller::Internal
 
     // 送り主の識別にだけ使う
     const void* source;
-    SDL_Surface* surface;
+
+    std::filesystem::path writtenPath;
+    std::filesystem::path sourceDirectory;
+
+    // 読み込むまではnullptr
+    // 流すのは読み込めた画像だけなので、Windowが受け取る画像では常に有効
+    SDL_Surface* surface = nullptr;
+
+    // show()からの自動の読み込みを1回に限る
+    bool loadAttempted = false;
   };
 
   // 送り主が破棄されても周期の終わりまで画像を保つ

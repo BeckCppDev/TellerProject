@@ -8,6 +8,7 @@ target_sources(TellerLibrary
     FILES
       src/Teller.hpp
       src/Teller/Asset/Asset.hpp
+      src/Teller/Asset/AssetPath.hpp
       src/Teller/Asset/Image.hpp
       src/Teller/Loop/LoopController.hpp
       src/Teller/Loop/Quit.hpp
