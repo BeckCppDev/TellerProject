@@ -3,6 +3,7 @@
 
 #include <Teller/Asset/Asset.hpp>
 #include <Teller/Asset/AssetPath.hpp>
+#include <Teller/Asset/Font.hpp>
 #include <Teller/Asset/Image.hpp>
 #include <Teller/Loop/LoopController.hpp>
 #include <Teller/Loop/Quit.hpp>
@@ -11,6 +12,7 @@
 #include <Teller/Smooth/Change.hpp>
 #include <Teller/Smooth/Easing.hpp>
 #include <Teller/Smooth/Progress.hpp>
+#include <Teller/Units/Anchor.hpp>
 #include <Teller/Units/Color.hpp>
 #include <Teller/Units/Duration.hpp>
 #include <Teller/Units/FrameRate.hpp>

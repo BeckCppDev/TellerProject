@@ -9,6 +9,7 @@ target_sources(TellerLibrary
       src/Teller.hpp
       src/Teller/Asset/Asset.hpp
       src/Teller/Asset/AssetPath.hpp
+      src/Teller/Asset/Font.hpp
       src/Teller/Asset/Image.hpp
       src/Teller/Loop/LoopController.hpp
       src/Teller/Loop/Quit.hpp
@@ -17,6 +18,7 @@ target_sources(TellerLibrary
       src/Teller/Smooth/Change.hpp
       src/Teller/Smooth/Easing.hpp
       src/Teller/Smooth/Progress.hpp
+      src/Teller/Units/Anchor.hpp
       src/Teller/Units/Color.hpp
       src/Teller/Units/Duration.hpp
       src/Teller/Units/FrameRate.hpp
@@ -30,6 +32,9 @@ target_sources(TellerLibrary
 target_sources(TellerLibrary
   PRIVATE
     impl/Asset/Asset.cpp
+    impl/Asset/AssetFiles.hpp
+    impl/Asset/Font.cpp
+    impl/Asset/FontData.hpp
     impl/Graphics/DrawBus.cpp
     impl/Graphics/DrawBus.hpp
     impl/Loop/ClockInternal.hpp
@@ -42,10 +47,15 @@ target_sources(TellerLibrary
     impl/Smooth/Change.cpp
     impl/Smooth/Transition.cpp
     impl/Smooth/Transition.hpp
+    impl/Text/FontFile.cpp
+    impl/Text/FontFile.hpp
     impl/Window/Window.cpp
     impl/Window/WindowInternal.hpp
 )
 target_include_directories(TellerLibrary PRIVATE impl)
+
+# third_party/はライブラリの中からだけ使い、警告を出さない
+target_include_directories(TellerLibrary SYSTEM PRIVATE third_party)
 
 target_compile_features(TellerLibrary PUBLIC cxx_std_20)
 

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Teller/Asset/AssetPath.hpp>
+#include <Teller/Asset/Font.hpp>
 #include <Teller/Asset/Image.hpp>
 
 #include <memory>
@@ -36,6 +37,12 @@ namespace Teller
     // 相対パスは実行ファイルの隣、image()を書いたcppの位置の順に探す
     // 同じパスは同じ画像を指す
     virtual Image image(AssetPath path);
+
+    // フォントを指定する
+    // ファイルはFont::load()か文の最初のshow()で読む
+    // パスの扱いはimage()と同じ
+    virtual Font font(AssetPath path);
+    virtual Font font(FontConfig config);
 
     // このAssetの画像へのshow()を確定する
     // 確定しなかったshow()は描かれない
