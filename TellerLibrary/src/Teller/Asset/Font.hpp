@@ -1,13 +1,16 @@
 #pragma once
 
 #include <Teller/Asset/AssetPath.hpp>
+#include <Teller/Smooth/Progress.hpp>
 #include <Teller/Units/Anchor.hpp>
+#include <Teller/Units/LetterRate.hpp>
 #include <Teller/Units/Length.hpp>
 #include <Teller/Units/Position.hpp>
 
+#include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <optional>
-#include <string>
 #include <string_view>
 
 namespace Teller
@@ -18,6 +21,7 @@ namespace Teller
   namespace Internal
   {
     struct FontData;
+    struct TextScript;
   }
 
   // Asset::font()に渡す設定
@@ -27,6 +31,10 @@ namespace Teller
 
     // 1emのピクセル数
     Length size = 16;
+
+    // 1文字ずつ出す速さ
+    // 0なら[speed]のタグがない部分を一度に出す
+    LetterRate speed = 0;
 
     // falseなら点の中心が内側かどうかで塗る2値で描く
     bool antialias = false;
@@ -56,6 +64,10 @@ namespace Teller
     bool load() const;
 
     // 文字列はUTF-8として読み、\nで改行する
+    // [speed=15_lps]は以降の速さを変え、[/speed]で1つ前に戻す
+    // [wait=1_sec]は次の文字の前で待つ
+    // 単位はsec、ms、framesで、省略すると秒
+    // [[と]]は角括弧そのもの
     [[nodiscard]] Text text(std::string_view text, TextConfig config = {}) const;
 
   private:
@@ -66,11 +78,13 @@ namespace Teller
     // Assetの破棄を検出するため、延命しない弱い参照で持つ
     std::weak_ptr<Internal::FontData> data_;
     int size_ = 16;
+    double speed_ = 0.0;
     bool antialias_ = false;
     Anchor anchor_ = Anchor::topLeft;
   };
 
   // Font::text()が返す文
+  // 進み具合は文ごとに持ち、コピーとは共有しない
   class Text
   {
   public:
@@ -79,21 +93,53 @@ namespace Teller
     // フォントの寄せ方で置く
     // フォントを読み込んでいなければ初回だけ読む
     // Asset::update()で確定するまで描かれず、1周期だけ有効
-    void show(Position position = Position::central) const;
+    // 文字送りはshow()を呼んだ周期だけ1周期分進む
+    // 戻り値は呼んだ後の進み具合
+    Progress show(Position position = Position::central);
 
     // 文全体を囲む箱のanchorの点を指定した位置に合わせる
     // 各行の横の揃え方もanchorに従う
-    void show(Position position, Anchor anchor) const;
+    // 箱はまだ出していない文字も含めて決める
+    Progress show(Position position, Anchor anchor);
+
+    // 最後のshow()の時点の値で、呼ぶ前はstarted
+    // 一度に全部出す文は最初のshow()からfinished
+    [[nodiscard]] Progress getProgress() const;
+
+    // finishedで残りを一気に出し、startedで最初から出し直す
+    // runningは何もしない
+    void setProgress(Progress progress);
+
+    [[nodiscard]] bool isFinished() const;
 
   private:
     friend class Font;
 
-    Text(const std::weak_ptr<Internal::FontData>& data, std::string_view text, int size, bool antialias, Anchor anchor);
+    Text(const std::weak_ptr<Internal::FontData>& data, std::string_view text, int size, double speed, bool antialias, Anchor anchor);
+
+    // 出す文字の数を返す
+    std::size_t advance();
 
     std::weak_ptr<Internal::FontData> data_;
-    std::string text_;
+
+    // 変わらないのでコピーと共有する
+    std::shared_ptr<const Internal::TextScript> script_;
+
     int size_ = 16;
     bool antialias_ = false;
     Anchor anchor_ = Anchor::topLeft;
+
+    Progress progress_ = Progress::started;
+
+    bool shown_ = false;
+
+    // setProgress(Progress::finished)で一気に出したか
+    bool skipped_ = false;
+
+    // 最後にshow()を呼んだ周期のtimer().frames()
+    std::uint64_t lastFrame_ = 0;
+
+    // show()を呼んだ周期の数で、最初の周期は0
+    std::uint64_t shownFrames_ = 0;
   };
 }

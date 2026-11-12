@@ -16,6 +16,7 @@
 #include <Teller/Units/Color.hpp>
 #include <Teller/Units/Duration.hpp>
 #include <Teller/Units/FrameRate.hpp>
+#include <Teller/Units/LetterRate.hpp>
 #include <Teller/Units/Length.hpp>
 #include <Teller/Units/Position.hpp>
 #include <Teller/Window/Window.hpp>

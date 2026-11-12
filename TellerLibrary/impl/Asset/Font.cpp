@@ -3,6 +3,8 @@
 #include <Asset/AssetFiles.hpp>
 #include <Asset/FontData.hpp>
 #include <Graphics/DrawBus.hpp>
+#include <Loop/ClockInternal.hpp>
+#include <Text/TextMarkup.hpp>
 
 #include <SDL3/SDL.h>
 
@@ -53,71 +55,6 @@ namespace Teller::Internal
 
   namespace
   {
-    // 壊れたバイト列は1バイトずつU+FFFDにする
-    char32_t nextCodepoint(std::string_view text, std::size_t& index)
-    {
-      constexpr char32_t replacement = 0xFFFD;
-      const auto byte = [&text](std::size_t at)
-      {
-        return static_cast<unsigned char>(text[at]);
-      };
-
-      const unsigned char first = byte(index);
-      int length = 0;
-      char32_t codepoint = 0;
-      if (first < 0x80)
-      {
-        ++index;
-        return first;
-      }
-      if ((first & 0xE0) == 0xC0)
-      {
-        length = 2;
-        codepoint = first & 0x1F;
-      }
-      else if ((first & 0xF0) == 0xE0)
-      {
-        length = 3;
-        codepoint = first & 0x0F;
-      }
-      else if ((first & 0xF8) == 0xF0)
-      {
-        length = 4;
-        codepoint = first & 0x07;
-      }
-      else
-      {
-        ++index;
-        return replacement;
-      }
-
-      if (index + length > text.size())
-      {
-        ++index;
-        return replacement;
-      }
-      for (int i = 1; i < length; ++i)
-      {
-        const unsigned char next = byte(index + i);
-        if ((next & 0xC0) != 0x80)
-        {
-          ++index;
-          return replacement;
-        }
-        codepoint = (codepoint << 6) | (next & 0x3F);
-      }
-
-      // 冗長な書き方、サロゲート、範囲外の値を弾く
-      constexpr char32_t minimums[] = { 0, 0, 0x80, 0x800, 0x10000 };
-      if (codepoint < minimums[length] || (codepoint >= 0xD800 && codepoint <= 0xDFFF) || codepoint > 0x10FFFF)
-      {
-        ++index;
-        return replacement;
-      }
-      index += length;
-      return codepoint;
-    }
-
     // 白で、濃さを透明度にする
     std::shared_ptr<ImageData> makeGlyphImage(const void* source, const GlyphBitmap& bitmap)
     {
@@ -174,6 +111,9 @@ namespace Teller::Internal
       int x = 0;
       int y = 0;
       int line = 0;
+
+      // TextScript::lettersの何文字目か
+      std::size_t letter = 0;
     };
 
     struct Layout
@@ -184,7 +124,8 @@ namespace Teller::Internal
       int height = 0;
     };
 
-    Layout layOut(FontData& font, std::string_view text, int size, const GlyphStyle& style)
+    // まだ出していない文字も含めて並べる
+    Layout layOut(FontData& font, std::u32string_view letters, int size, const GlyphStyle& style)
     {
       const LineMetrics metrics = font.file->lineMetrics(size, style.outline);
       Layout layout;
@@ -192,10 +133,9 @@ namespace Teller::Internal
       int line = 0;
       int previousGlyph = -1;
 
-      std::size_t index = 0;
-      while (index < text.size())
+      for (std::size_t index = 0; index < letters.size(); ++index)
       {
-        const char32_t codepoint = nextCodepoint(text, index);
+        const char32_t codepoint = letters[index];
         if (codepoint == U'\n')
         {
           layout.lineWidths.push_back(penX);
@@ -204,11 +144,6 @@ namespace Teller::Internal
           previousGlyph = -1;
           continue;
         }
-        if (codepoint == U'\r')
-        {
-          continue;
-        }
-
         const int glyph = font.file->glyphIndex(codepoint);
         if (previousGlyph >= 0)
         {
@@ -218,7 +153,7 @@ namespace Teller::Internal
         if (cached.image != nullptr)
         {
           const int baseline = line * metrics.lineSkip + metrics.ascent;
-          layout.glyphs.push_back({ cached.image, penX + cached.left, baseline + cached.top, line });
+          layout.glyphs.push_back({ cached.image, penX + cached.left, baseline + cached.top, line, index });
         }
         penX += cached.advance;
         previousGlyph = glyph;
@@ -272,6 +207,7 @@ namespace Teller
   Font::Font(const std::shared_ptr<Internal::FontData>& data, const FontConfig& config)
     : data_(data)
     , size_(config.size.px())
+    , speed_(config.speed.lps())
     , antialias_(config.antialias)
     , anchor_(config.anchor)
   {
@@ -290,25 +226,126 @@ namespace Teller
   Text Font::text(std::string_view text, TextConfig config) const
   {
     const int size = config.size.has_value() ? config.size->px() : size_;
-    return Text(data_, text, size, antialias_, anchor_);
+    return Text(data_, text, size, speed_, antialias_, anchor_);
   }
 
-  Text::Text(const std::weak_ptr<Internal::FontData>& data, std::string_view text, int size, bool antialias, Anchor anchor)
+  Text::Text(const std::weak_ptr<Internal::FontData>& data, std::string_view text, int size, double speed, bool antialias, Anchor anchor)
     : data_(data)
-    , text_(text)
+    , script_(std::make_shared<const Internal::TextScript>(Internal::parseTextMarkup(text, speed)))
     , size_(size)
     , antialias_(antialias)
     , anchor_(anchor)
   {
   }
 
-  void Text::show(Position position) const
+  std::size_t Text::advance()
   {
-    show(position, anchor_);
+    if (script_ == nullptr)
+    {
+      progress_ = Progress::finished;
+      return 0;
+    }
+
+    // LoopControllerがないと周期を数えられないので一度に全部出す
+    if (!Internal::isClockActive())
+    {
+      skipped_ = true;
+    }
+
+    // show()を呼んだ周期だけを1回ずつ数える
+    const std::uint64_t frame = Internal::clockFrames();
+    if (!shown_)
+    {
+      shown_ = true;
+      lastFrame_ = frame;
+      shownFrames_ = 0;
+    }
+    else if (frame != lastFrame_)
+    {
+      lastFrame_ = frame;
+      ++shownFrames_;
+    }
+
+    const Internal::TextScript& script = *script_;
+    if (skipped_)
+    {
+      progress_ = Progress::finished;
+      return script.letters.size();
+    }
+
+    // TASで再現できるよう整数で比べる
+    const int fps = Internal::clockFps();
+    const auto reached = [this, fps](const Internal::TextMoment& moment)
+    {
+      return Internal::momentToFrames(moment, fps) <= shownFrames_;
+    };
+    const auto firstHidden = std::partition_point(script.appearAt.begin(), script.appearAt.end(), reached);
+
+    if (reached(script.end))
+    {
+      progress_ = Progress::finished;
+    }
+    else if (shownFrames_ == 0)
+    {
+      progress_ = Progress::started;
+    }
+    else
+    {
+      progress_ = Progress::running;
+    }
+    return static_cast<std::size_t>(firstHidden - script.appearAt.begin());
   }
 
-  void Text::show(Position position, Anchor anchor) const
+  Progress Text::getProgress() const
   {
+    return progress_;
+  }
+
+  void Text::setProgress(Progress progress)
+  {
+    switch (progress)
+    {
+      case Progress::started:
+        // 次のshow()を最初のshow()として扱う
+        shown_ = false;
+        skipped_ = false;
+        shownFrames_ = 0;
+        progress_ = Progress::started;
+        break;
+      case Progress::finished:
+        skipped_ = true;
+        progress_ = Progress::finished;
+        break;
+      case Progress::running:
+#ifndef NDEBUG
+      {
+        static bool warned = false;
+        if (!warned)
+        {
+          warned = true;
+          SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Teller::Text: setProgress(Progress::running) does nothing");
+        }
+      }
+#endif
+        break;
+    }
+  }
+
+  bool Text::isFinished() const
+  {
+    return progress_ == Progress::finished;
+  }
+
+  Progress Text::show(Position position)
+  {
+    return show(position, anchor_);
+  }
+
+  Progress Text::show(Position position, Anchor anchor)
+  {
+    // ゲームの進行がフォントの有無に左右されないよう、描く前に進める
+    const std::size_t visibleLetters = advance();
+
     const std::shared_ptr<Internal::FontData> data = data_.lock();
     if (data == nullptr)
     {
@@ -320,7 +357,7 @@ namespace Teller
         SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Teller::Text: show() was called on a text that was not made by Font::text() or whose Asset was destroyed");
       }
 #endif
-      return;
+      return progress_;
     }
 
     // 毎周期読み直してログが溢れないよう、自動で読むのは初回だけにする
@@ -328,17 +365,17 @@ namespace Teller
     {
       if (data->loadAttempted || !Internal::loadFont(*data))
       {
-        return;
+        return progress_;
       }
     }
-    if (size_ <= 0 || text_.empty())
+    if (size_ <= 0 || script_->letters.empty())
     {
-      return;
+      return progress_;
     }
 
     Internal::GlyphStyle style;
     style.antialias = antialias_;
-    const Internal::Layout layout = Internal::layOut(*data, text_, size_, style);
+    const Internal::Layout layout = Internal::layOut(*data, script_->letters, size_, style);
 
     // にじまないよう、箱の左上を整数のピクセルに揃える
     // 利用者の座標はYが上向き
@@ -349,6 +386,10 @@ namespace Teller
 
     for (const Internal::PlacedGlyph& glyph : layout.glyphs)
     {
+      if (glyph.letter >= visibleLetters)
+      {
+        break;
+      }
       const int lineOffset = (layout.width - layout.lineWidths[static_cast<std::size_t>(glyph.line)]) * halvesX / 2;
       const double width = glyph.image->surface->w;
       const double height = glyph.image->surface->h;
@@ -358,5 +399,6 @@ namespace Teller
       const double centerY = top - glyph.y - height / 2.0;
       Internal::publishDraw({ glyph.image, centerX, centerY });
     }
+    return progress_;
   }
 }

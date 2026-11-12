@@ -22,6 +22,7 @@ target_sources(TellerLibrary
       src/Teller/Units/Color.hpp
       src/Teller/Units/Duration.hpp
       src/Teller/Units/FrameRate.hpp
+      src/Teller/Units/LetterRate.hpp
       src/Teller/Units/Length.hpp
       src/Teller/Units/Literals.hpp
       src/Teller/Units/Position.hpp
@@ -49,6 +50,8 @@ target_sources(TellerLibrary
     impl/Smooth/Transition.hpp
     impl/Text/FontFile.cpp
     impl/Text/FontFile.hpp
+    impl/Text/TextMarkup.cpp
+    impl/Text/TextMarkup.hpp
     impl/Window/Window.cpp
     impl/Window/WindowInternal.hpp
 )
