@@ -12,6 +12,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <iterator>
 #include <string>
 #include <utility>
 #include <vector>
@@ -359,6 +360,36 @@ namespace Teller
     source->speed = speed_;
     source->baseStyle = baseStyle;
     return Text(data_, std::move(source), size, antialias_, anchor_);
+  }
+
+  Progress Font::showDirect(Position position, Anchor anchor, std::string_view markup, std::vector<Internal::TextValue> values)
+  {
+    // 周期が進まず忘れる時機がないので覚えない
+    if (!Internal::isClockActive())
+    {
+      Text once = text(markup);
+      return once.showWithValues(position, anchor, std::move(values));
+    }
+
+    // 前の周期に渡されなかった文字列を忘れる
+    const std::uint64_t frame = Internal::clockFrames();
+    std::erase_if(shownTexts_, [frame](const ShownText& shown)
+    {
+      return shown.lastFrame + 1 < frame;
+    });
+
+    auto found = std::find_if(shownTexts_.begin(), shownTexts_.end(), [markup](const ShownText& shown)
+    {
+      return shown.markup == markup;
+    });
+    if (found == shownTexts_.end())
+    {
+      shownTexts_.push_back({ std::string(markup), text(markup), frame });
+      found = std::prev(shownTexts_.end());
+    }
+    found->lastFrame = frame;
+
+    return found->text.showWithValues(position, anchor, std::move(values));
   }
 
   Text::Text(const std::weak_ptr<Internal::FontData>& data, std::shared_ptr<const Internal::TextSource> source, int size, bool antialias, Anchor anchor)

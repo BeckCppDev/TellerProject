@@ -103,6 +103,21 @@ namespace Teller
       }
       return result;
     }
+
+    // Font::show()の文字列
+    // std::string_viewで受けると{0, 0}が(ポインタ, 長さ)として入り、位置を省いた呼び出しとして扱われる
+    // 推論できない波括弧は受けないようテンプレートにする
+    struct ShowText
+    {
+      template <typename T>
+        requires std::convertible_to<const T&, std::string_view>
+      ShowText(const T& text)
+        : view(text)
+      {
+      }
+
+      std::string_view view;
+    };
   }
 
   // Asset::font()に渡す設定
@@ -132,7 +147,7 @@ namespace Teller
     Length outline = 0;
     Color outlineColor = Color::black;
 
-    // Text::show()で寄せ方を省略したときの寄せ方
+    // Text::show()とFont::show()で寄せ方を省略したときの寄せ方
     Anchor anchor = Anchor::topLeft;
   };
 
@@ -141,57 +156,6 @@ namespace Teller
   struct TextConfig
   {
     std::optional<Length> size;
-  };
-
-  // Asset::font()が返すフォント
-  // ファイルはAssetが持ち、コピーしても同じファイルを指す
-  // 大きさなどの設定はFontごとに持つ
-  // 何も指定していないFontとAssetの破棄後は、作った文が何も描かない
-  class Font
-  {
-  public:
-    Font() = default;
-
-    // 読み込み済みなら何もしない
-    // 失敗したときはログを出してfalseを返し、次の呼び出しで読み直す
-    bool load() const;
-
-    // 文字列はUTF-8として読み、\nで改行する
-    // [speed=15_lps]は以降の速さを変え、[/speed]で1つ前に戻す
-    // [wait=1_sec]は次の文字の前で待つ
-    // 単位はsec、ms、framesで、省略すると秒
-    // [bold](略称[b])、[italic]([i])、[underline]([u])、[strikethrough]([st])は閉じるまで見た目を変える
-    // [outline=2_px]([o2])は閉じるまで縁取りし、値を省略すると1px
-    // [color=red]([red]、[c=red])は[/color]か[/c]で閉じるまで文字の色を変え、色はColorの定数の名前か#FF0000
-    // [color=green,outline=2_px]は縁の色と太さを変えて[/outline]で閉じ、並びは自由
-    // 略称では色の項目名を省いて[o2,green]と書ける
-    // 色にrainbowと書くと2秒で色合いが一周する([rainbow]、[o2,rainbow])
-    // 閉じタグは正式名称と略称のどちらでもよく、[b]を[/bold]で閉じられる
-    // [speed]は[s15]、[wait]は[w0.5]と略せる
-    // [[と]]は角括弧そのもの
-    // {}にはText::show()に渡した値が出てきた順に入る
-    // 値の中の[と]はタグとして読まない
-    // タグの中の{}にはColorだけを入れられる([o2,{}]、[{}])
-    // {{と}}は波括弧そのもの
-    [[nodiscard]] Text text(std::string_view text, TextConfig config = {}) const;
-
-  private:
-    friend class Asset;
-
-    Font(const std::shared_ptr<Internal::FontData>& data, const FontConfig& config);
-
-    // Assetの破棄を検出するため、延命しない弱い参照で持つ
-    std::weak_ptr<Internal::FontData> data_;
-    int size_ = 16;
-    double speed_ = 0.0;
-    bool antialias_ = false;
-    bool bold_ = false;
-    bool italic_ = false;
-    bool underline_ = false;
-    bool strikethrough_ = false;
-    int outline_ = 0;
-    std::uint32_t outlineColor_ = 0;
-    Anchor anchor_ = Anchor::topLeft;
   };
 
   // Font::text()が返す文
@@ -289,5 +253,97 @@ namespace Teller
 
     // show()を呼んだ周期の数で、最初の周期は0
     std::uint64_t shownFrames_ = 0;
+  };
+
+  // Asset::font()が返すフォント
+  // ファイルはAssetが持ち、コピーしても同じファイルを指す
+  // 大きさなどの設定はFontごとに持つ
+  // 何も指定していないFontとAssetの破棄後は、作った文が何も描かない
+  class Font
+  {
+  public:
+    Font() = default;
+
+    // 読み込み済みなら何もしない
+    // 失敗したときはログを出してfalseを返し、次の呼び出しで読み直す
+    bool load() const;
+
+    // 文字列はUTF-8として読み、\nで改行する
+    // [speed=15_lps]は以降の速さを変え、[/speed]で1つ前に戻す
+    // [wait=1_sec]は次の文字の前で待つ
+    // 単位はsec、ms、framesで、省略すると秒
+    // [bold](略称[b])、[italic]([i])、[underline]([u])、[strikethrough]([st])は閉じるまで見た目を変える
+    // [outline=2_px]([o2])は閉じるまで縁取りし、値を省略すると1px
+    // [color=red]([red]、[c=red])は[/color]か[/c]で閉じるまで文字の色を変え、色はColorの定数の名前か#FF0000
+    // [color=green,outline=2_px]は縁の色と太さを変えて[/outline]で閉じ、並びは自由
+    // 略称では色の項目名を省いて[o2,green]と書ける
+    // 色にrainbowと書くと2秒で色合いが一周する([rainbow]、[o2,rainbow])
+    // 閉じタグは正式名称と略称のどちらでもよく、[b]を[/bold]で閉じられる
+    // [speed]は[s15]、[wait]は[w0.5]と略せる
+    // [[と]]は角括弧そのもの
+    // {}にはText::show()に渡した値が出てきた順に入る
+    // 値の中の[と]はタグとして読まない
+    // タグの中の{}にはColorだけを入れられる([o2,{}]、[{}])
+    // {{と}}は波括弧そのもの
+    [[nodiscard]] Text text(std::string_view text, TextConfig config = {}) const;
+
+    // text()の文を作らずに描く
+    // 進み具合はこのFontの変数が文字列ごとに持ち、{}に値を入れる前の文字列が同じなら続きから出す
+    // 前の周期に渡さなかった文字列は進み具合を忘れ、次は1文字目から出す
+    // 1周期に同じ文字列を何回渡しても進むのは1周期分
+    // コピーしたFontは進み具合を写し、以降は別々に進む
+    // LoopControllerがないときは進み具合を覚えず、一度に全部出す
+    // 位置を省略すると画面の中央、寄せ方を省略するとフォントの寄せ方
+    // タグと{}の扱い、戻り値はtext()とText::show()と同じ
+    template <Internal::TextValueType... Values>
+    Progress show(Internal::ShowText text, const Values&... values)
+    {
+      return showDirect(Position::central, anchor_, text.view, { Internal::toTextValue(values)... });
+    }
+
+    template <Internal::TextValueType... Values>
+    Progress show(Position position, Internal::ShowText text, const Values&... values)
+    {
+      return showDirect(position, anchor_, text.view, { Internal::toTextValue(values)... });
+    }
+
+    template <Internal::TextValueType... Values>
+    Progress show(Position position, Anchor anchor, Internal::ShowText text, const Values&... values)
+    {
+      return showDirect(position, anchor, text.view, { Internal::toTextValue(values)... });
+    }
+
+  private:
+    friend class Asset;
+
+    Font(const std::shared_ptr<Internal::FontData>& data, const FontConfig& config);
+
+    // show()に渡された文字列の進み具合
+    struct ShownText
+    {
+      std::string markup;
+      Text text;
+
+      // 最後に渡された周期のtimer().frames()
+      std::uint64_t lastFrame = 0;
+    };
+
+    Progress showDirect(Position position, Anchor anchor, std::string_view markup, std::vector<Internal::TextValue> values);
+
+    // Assetの破棄を検出するため、延命しない弱い参照で持つ
+    std::weak_ptr<Internal::FontData> data_;
+    int size_ = 16;
+    double speed_ = 0.0;
+    bool antialias_ = false;
+    bool bold_ = false;
+    bool italic_ = false;
+    bool underline_ = false;
+    bool strikethrough_ = false;
+    int outline_ = 0;
+    std::uint32_t outlineColor_ = 0;
+    Anchor anchor_ = Anchor::topLeft;
+
+    // 1周期に渡す文字列は数個なので順に探す
+    std::vector<ShownText> shownTexts_;
   };
 }
