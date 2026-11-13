@@ -4,8 +4,10 @@
 #include <Text/FontFile.hpp>
 
 #include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <functional>
+#include <map>
 #include <memory>
 #include <unordered_map>
 
@@ -17,6 +19,9 @@ namespace Teller::Internal
     int glyph = 0;
     int size = 0;
     GlyphStyle style;
+
+    // 0xRRGGBB
+    std::uint32_t color = 0;
 
     [[nodiscard]] bool operator==(const GlyphKey&) const noexcept = default;
   };
@@ -32,9 +37,20 @@ namespace Teller::Internal
       };
       mix(std::hash<int>{}(key.size));
       mix(std::hash<int>{}(key.style.outline));
+      mix(std::hash<std::uint32_t>{}(key.color));
       mix((key.style.antialias ? 1u : 0u) | (key.style.bold ? 2u : 0u) | (key.style.italic ? 4u : 0u));
       return hash;
     }
+  };
+
+  // 下線と取り消し線の四角の使い回しのキー
+  struct LineImageKey
+  {
+    int width = 0;
+    int height = 0;
+    std::uint32_t color = 0;
+
+    [[nodiscard]] auto operator<=>(const LineImageKey&) const noexcept = default;
   };
 
   // 1文字分の絵と位置
@@ -65,6 +81,7 @@ namespace Teller::Internal
     bool loadAttempted = false;
 
     std::unordered_map<GlyphKey, CachedGlyph, GlyphKeyHash> glyphs;
+    std::map<LineImageKey, std::shared_ptr<ImageData>> lineImages;
   };
 
   // 失敗したときはログを出してfalseを返す

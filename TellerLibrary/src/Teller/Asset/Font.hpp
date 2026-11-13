@@ -3,6 +3,7 @@
 #include <Teller/Asset/AssetPath.hpp>
 #include <Teller/Smooth/Progress.hpp>
 #include <Teller/Units/Anchor.hpp>
+#include <Teller/Units/Color.hpp>
 #include <Teller/Units/LetterRate.hpp>
 #include <Teller/Units/Length.hpp>
 #include <Teller/Units/Position.hpp>
@@ -39,6 +40,18 @@ namespace Teller
     // falseなら点の中心が内側かどうかで塗る2値で描く
     bool antialias = false;
 
+    // 以下の6つはフォントの全ての文に効き、タグで外せない
+
+    // 太さを大きさの10分の1だけ足す
+    bool bold = false;
+    bool italic = false;
+    bool underline = false;
+    bool strikethrough = false;
+
+    // 0なら縁取りなし
+    Length outline = 0;
+    Color outlineColor = Color::black;
+
     // Text::show()で寄せ方を省略したときの寄せ方
     Anchor anchor = Anchor::topLeft;
   };
@@ -67,6 +80,13 @@ namespace Teller
     // [speed=15_lps]は以降の速さを変え、[/speed]で1つ前に戻す
     // [wait=1_sec]は次の文字の前で待つ
     // 単位はsec、ms、framesで、省略すると秒
+    // [bold](略称[b])、[italic]([i])、[underline]([u])、[strikethrough]([st])は閉じるまで見た目を変える
+    // [outline=2_px]([o2])は閉じるまで縁取りし、値を省略すると1px
+    // [color=red]([c=red]、[cred])は閉じるまで文字の色を変え、色はColorの定数の名前か#FF0000
+    // [color=green,outline=2_px]は縁の色と太さを変えて[/outline]で閉じ、並びは自由
+    // 略称では色の項目名を省いて[o2,green]と書ける
+    // 閉じタグは正式名称と略称のどちらでもよく、[b]を[/bold]で閉じられる
+    // [speed]は[s15]、[wait]は[w0.5]と略せる
     // [[と]]は角括弧そのもの
     [[nodiscard]] Text text(std::string_view text, TextConfig config = {}) const;
 
@@ -80,6 +100,12 @@ namespace Teller
     int size_ = 16;
     double speed_ = 0.0;
     bool antialias_ = false;
+    bool bold_ = false;
+    bool italic_ = false;
+    bool underline_ = false;
+    bool strikethrough_ = false;
+    int outline_ = 0;
+    std::uint32_t outlineColor_ = 0;
     Anchor anchor_ = Anchor::topLeft;
   };
 
@@ -115,7 +141,7 @@ namespace Teller
   private:
     friend class Font;
 
-    Text(const std::weak_ptr<Internal::FontData>& data, std::string_view text, int size, double speed, bool antialias, Anchor anchor);
+    Text(const std::weak_ptr<Internal::FontData>& data, std::shared_ptr<const Internal::TextScript> script, int size, bool antialias, Anchor anchor);
 
     // 出す文字の数を返す
     std::size_t advance();

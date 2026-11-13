@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <string>
 #include <utility>
 #include <vector>
@@ -55,29 +56,29 @@ namespace Teller::Internal
 
   namespace
   {
-    // 白で、濃さを透明度にする
-    std::shared_ptr<ImageData> makeGlyphImage(const void* source, const GlyphBitmap& bitmap)
+    // 濃さを透明度にし、全ての点を0xRRGGBBの色で塗る
+    std::shared_ptr<ImageData> makeAlphaImage(const void* source, const unsigned char* alpha, int width, int height, std::uint32_t color)
     {
-      if (bitmap.width <= 0 || bitmap.height <= 0)
+      if (width <= 0 || height <= 0)
       {
         return nullptr;
       }
-      SDL_Surface* surface = SDL_CreateSurface(bitmap.width, bitmap.height, SDL_PIXELFORMAT_RGBA32);
+      SDL_Surface* surface = SDL_CreateSurface(width, height, SDL_PIXELFORMAT_RGBA32);
       if (surface == nullptr)
       {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Teller::Font: SDL_CreateSurface failed: %s", SDL_GetError());
         return nullptr;
       }
-      for (int y = 0; y < bitmap.height; ++y)
+      for (int y = 0; y < height; ++y)
       {
         auto* row = static_cast<unsigned char*>(surface->pixels) + static_cast<std::ptrdiff_t>(y) * surface->pitch;
-        for (int x = 0; x < bitmap.width; ++x)
+        for (int x = 0; x < width; ++x)
         {
           unsigned char* pixel = row + static_cast<std::ptrdiff_t>(x) * 4;
-          pixel[0] = 255;
-          pixel[1] = 255;
-          pixel[2] = 255;
-          pixel[3] = bitmap.alpha[static_cast<std::size_t>(y) * static_cast<std::size_t>(bitmap.width) + static_cast<std::size_t>(x)];
+          pixel[0] = static_cast<unsigned char>(color >> 16);
+          pixel[1] = static_cast<unsigned char>(color >> 8);
+          pixel[2] = static_cast<unsigned char>(color);
+          pixel[3] = alpha == nullptr ? 255 : alpha[static_cast<std::size_t>(y) * static_cast<std::size_t>(width) + static_cast<std::size_t>(x)];
         }
       }
 
@@ -87,9 +88,9 @@ namespace Teller::Internal
       return image;
     }
 
-    const CachedGlyph& findGlyph(FontData& font, int glyph, int size, const GlyphStyle& style)
+    const CachedGlyph& findGlyph(FontData& font, int glyph, int size, const GlyphStyle& style, std::uint32_t color)
     {
-      const GlyphKey key{ glyph, size, style };
+      const GlyphKey key{ glyph, size, style, color };
       if (const auto found = font.glyphs.find(key); found != font.glyphs.end())
       {
         return found->second;
@@ -97,15 +98,28 @@ namespace Teller::Internal
 
       const GlyphBitmap bitmap = font.file->render(glyph, size, style);
       CachedGlyph cached;
-      cached.image = makeGlyphImage(font.source, bitmap);
+      cached.image = makeAlphaImage(font.source, bitmap.alpha.data(), bitmap.width, bitmap.height, color);
       cached.left = bitmap.left;
       cached.top = bitmap.top;
       cached.advance = bitmap.advance;
       return font.glyphs.emplace(key, std::move(cached)).first->second;
     }
 
+    // 下線と取り消し線は1文字ごとに送り幅の長さの四角を描いてつなげる
+    std::shared_ptr<ImageData> findLineImage(FontData& font, int width, int height, std::uint32_t color)
+    {
+      const LineImageKey key{ width, height, color };
+      if (const auto found = font.lineImages.find(key); found != font.lineImages.end())
+      {
+        return found->second;
+      }
+      std::shared_ptr<ImageData> image = makeAlphaImage(font.source, nullptr, width, height, color);
+      font.lineImages.emplace(key, image);
+      return image;
+    }
+
     // 位置は文全体の箱の左上から見た絵の左上で、yは下向き
-    struct PlacedGlyph
+    struct PlacedImage
     {
       std::shared_ptr<ImageData> image;
       int x = 0;
@@ -118,24 +132,30 @@ namespace Teller::Internal
 
     struct Layout
     {
-      std::vector<PlacedGlyph> glyphs;
+      // 隣の文字の中身を隠さないよう全ての中身より奥に描く
+      std::vector<PlacedImage> rings;
+
+      // 文字の中身と線
+      std::vector<PlacedImage> fills;
+
       std::vector<int> lineWidths;
       int width = 0;
       int height = 0;
     };
 
     // まだ出していない文字も含めて並べる
-    Layout layOut(FontData& font, std::u32string_view letters, int size, const GlyphStyle& style)
+    // 縁取りは送り幅と行の高さを変えないので、縁の有無で文字の位置はずれない
+    Layout layOut(FontData& font, const TextScript& script, int size, bool antialias)
     {
-      const LineMetrics metrics = font.file->lineMetrics(size, style.outline);
+      const LineMetrics metrics = font.file->lineMetrics(size);
       Layout layout;
       int penX = 0;
       int line = 0;
       int previousGlyph = -1;
 
-      for (std::size_t index = 0; index < letters.size(); ++index)
+      for (std::size_t index = 0; index < script.letters.size(); ++index)
       {
-        const char32_t codepoint = letters[index];
+        const char32_t codepoint = script.letters[index];
         if (codepoint == U'\n')
         {
           layout.lineWidths.push_back(penX);
@@ -144,17 +164,61 @@ namespace Teller::Internal
           previousGlyph = -1;
           continue;
         }
+        const TextStyle& textStyle = script.styles[index];
+        GlyphStyle style;
+        style.antialias = antialias;
+        style.bold = textStyle.bold;
+        style.italic = textStyle.italic;
+
         const int glyph = font.file->glyphIndex(codepoint);
         if (previousGlyph >= 0)
         {
           penX += font.file->kerning(previousGlyph, glyph, size);
         }
-        const CachedGlyph& cached = findGlyph(font, glyph, size, style);
+        const int lineTop = line * metrics.lineSkip;
+        const int baseline = lineTop + metrics.ascent;
+
+        // findGlyphの戻り値は、後で別の文字を探してもunordered_mapの仕様で無効にならない
+        const CachedGlyph& cached = findGlyph(font, glyph, size, style, textStyle.color);
         if (cached.image != nullptr)
         {
-          const int baseline = line * metrics.lineSkip + metrics.ascent;
-          layout.glyphs.push_back({ cached.image, penX + cached.left, baseline + cached.top, line, index });
+          layout.fills.push_back({ cached.image, penX + cached.left, baseline + cached.top, line, index });
         }
+        if (textStyle.outline > 0)
+        {
+          GlyphStyle ringStyle = style;
+          ringStyle.outline = textStyle.outline;
+          const CachedGlyph& ring = findGlyph(font, glyph, size, ringStyle, textStyle.outlineColor);
+          if (ring.image != nullptr)
+          {
+            layout.rings.push_back({ ring.image, penX + ring.left, baseline + ring.top, line, index });
+          }
+        }
+
+        // 空白にも線を引く
+        if ((textStyle.underline || textStyle.strikethrough) && cached.advance > 0)
+        {
+          const LineMetrics ringMetrics = textStyle.outline > 0 ? font.file->lineMetrics(size, textStyle.outline) : metrics;
+          const auto addLine = [&](int fillTop, int ringTop)
+          {
+            layout.fills.push_back({ findLineImage(font, cached.advance, metrics.lineThickness, textStyle.color), penX, lineTop + fillTop, line, index });
+            if (textStyle.outline > 0)
+            {
+              // 縁の分だけ左右にも広げる
+              const int ringWidth = cached.advance + 2 * textStyle.outline;
+              layout.rings.push_back({ findLineImage(font, ringWidth, ringMetrics.lineThickness, textStyle.outlineColor), penX - textStyle.outline, lineTop + ringTop, line, index });
+            }
+          };
+          if (textStyle.underline)
+          {
+            addLine(metrics.underlineTop, ringMetrics.underlineTop);
+          }
+          if (textStyle.strikethrough)
+          {
+            addLine(metrics.strikethroughTop, ringMetrics.strikethroughTop);
+          }
+        }
+
         penX += cached.advance;
         previousGlyph = glyph;
       }
@@ -209,6 +273,12 @@ namespace Teller
     , size_(config.size.px())
     , speed_(config.speed.lps())
     , antialias_(config.antialias)
+    , bold_(config.bold)
+    , italic_(config.italic)
+    , underline_(config.underline)
+    , strikethrough_(config.strikethrough)
+    , outline_(std::clamp(config.outline.px(), 0, Internal::maxOutline))
+    , outlineColor_((static_cast<std::uint32_t>(config.outlineColor.r()) << 16) | (static_cast<std::uint32_t>(config.outlineColor.g()) << 8) | config.outlineColor.b())
     , anchor_(config.anchor)
   {
   }
@@ -226,12 +296,20 @@ namespace Teller
   Text Font::text(std::string_view text, TextConfig config) const
   {
     const int size = config.size.has_value() ? config.size->px() : size_;
-    return Text(data_, text, size, speed_, antialias_, anchor_);
+    Internal::TextStyle baseStyle;
+    baseStyle.bold = bold_;
+    baseStyle.italic = italic_;
+    baseStyle.underline = underline_;
+    baseStyle.strikethrough = strikethrough_;
+    baseStyle.outline = outline_;
+    baseStyle.outlineColor = outlineColor_;
+    auto script = std::make_shared<const Internal::TextScript>(Internal::parseTextMarkup(text, speed_, baseStyle));
+    return Text(data_, std::move(script), size, antialias_, anchor_);
   }
 
-  Text::Text(const std::weak_ptr<Internal::FontData>& data, std::string_view text, int size, double speed, bool antialias, Anchor anchor)
+  Text::Text(const std::weak_ptr<Internal::FontData>& data, std::shared_ptr<const Internal::TextScript> script, int size, bool antialias, Anchor anchor)
     : data_(data)
-    , script_(std::make_shared<const Internal::TextScript>(Internal::parseTextMarkup(text, speed)))
+    , script_(std::move(script))
     , size_(size)
     , antialias_(antialias)
     , anchor_(anchor)
@@ -373,9 +451,7 @@ namespace Teller
       return progress_;
     }
 
-    Internal::GlyphStyle style;
-    style.antialias = antialias_;
-    const Internal::Layout layout = Internal::layOut(*data, script_->letters, size_, style);
+    const Internal::Layout layout = Internal::layOut(*data, *script_, size_, antialias_);
 
     // にじまないよう、箱の左上を整数のピクセルに揃える
     // 利用者の座標はYが上向き
@@ -384,21 +460,26 @@ namespace Teller
     const double left = std::floor(position.x() - layout.width * halvesX / 2.0 + 0.5);
     const double top = std::floor(position.y() + layout.height * halvesY / 2.0 + 0.5);
 
-    for (const Internal::PlacedGlyph& glyph : layout.glyphs)
+    const auto publish = [&](const std::vector<Internal::PlacedImage>& images)
     {
-      if (glyph.letter >= visibleLetters)
+      for (const Internal::PlacedImage& placed : images)
       {
-        break;
-      }
-      const int lineOffset = (layout.width - layout.lineWidths[static_cast<std::size_t>(glyph.line)]) * halvesX / 2;
-      const double width = glyph.image->surface->w;
-      const double height = glyph.image->surface->h;
+        if (placed.letter >= visibleLetters || placed.image == nullptr)
+        {
+          continue;
+        }
+        const int lineOffset = (layout.width - layout.lineWidths[static_cast<std::size_t>(placed.line)]) * halvesX / 2;
+        const double width = placed.image->surface->w;
+        const double height = placed.image->surface->h;
 
-      // Windowは画像の中心の位置を受け取る
-      const double centerX = left + lineOffset + glyph.x + width / 2.0;
-      const double centerY = top - glyph.y - height / 2.0;
-      Internal::publishDraw({ glyph.image, centerX, centerY });
-    }
+        // Windowは画像の中心の位置を受け取る
+        const double centerX = left + lineOffset + placed.x + width / 2.0;
+        const double centerY = top - placed.y - height / 2.0;
+        Internal::publishDraw({ placed.image, centerX, centerY });
+      }
+    };
+    publish(layout.rings);
+    publish(layout.fills);
     return progress_;
   }
 }

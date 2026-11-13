@@ -16,6 +16,25 @@ namespace Teller::Internal
     std::int64_t frames = 0;
   };
 
+  // 文字の絵の大きさが桁あふれしないよう縁の太さを抑える
+  constexpr int maxOutline = 1'000;
+
+  // 1文字ごとの見た目
+  struct TextStyle
+  {
+    bool bold = false;
+    bool italic = false;
+    bool underline = false;
+    bool strikethrough = false;
+
+    // 0なら縁取りなし
+    int outline = 0;
+
+    // 0xRRGGBB
+    std::uint32_t color = 0xFFFFFF;
+    std::uint32_t outlineColor = 0x000000;
+  };
+
   // タグを取り除いた文と各文字が出る時刻
   struct TextScript
   {
@@ -25,12 +44,16 @@ namespace Teller::Internal
     // lettersと同じ並びで、後ろほど遅いか同じ
     std::vector<TextMoment> appearAt;
 
+    // lettersと同じ並び
+    std::vector<TextStyle> styles;
+
     // 最後の文字と、その後ろの[wait]が終わる時刻
     TextMoment end;
   };
 
   // speedは1秒あたりの文字数で、0以下なら一度に出す
-  [[nodiscard]] TextScript parseTextMarkup(std::string_view text, double speed);
+  // baseStyleはタグのない部分の見た目
+  [[nodiscard]] TextScript parseTextMarkup(std::string_view text, double speed, const TextStyle& baseStyle);
 
   // 最初のshow()を0として、その時刻に達する最初のフレームを返す
   [[nodiscard]] std::uint64_t momentToFrames(const TextMoment& moment, int fps);

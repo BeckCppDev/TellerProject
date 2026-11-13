@@ -2,6 +2,7 @@
 
 #include <SDL3/SDL.h>
 
+#include <algorithm>
 #include <charconv>
 #include <cmath>
 #include <cstddef>
@@ -146,6 +147,190 @@ namespace Teller::Internal
       return std::isfinite(number) && number >= 0.0;
     }
 
+    struct TagAlias
+    {
+      std::string_view shortName;
+      std::string_view fullName;
+    };
+
+    constexpr TagAlias tagAliases[] = {
+      { "b", "bold" },
+      { "i", "italic" },
+      { "u", "underline" },
+      { "st", "strikethrough" },
+      { "o", "outline" },
+      { "s", "speed" },
+      { "w", "wait" },
+      { "c", "color" },
+    };
+
+    bool isAbbreviation(std::string_view name)
+    {
+      for (const TagAlias& alias : tagAliases)
+      {
+        if (name == alias.shortName)
+        {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    // [b]を[/bold]で閉じられるよう略称を正式名称に直す
+    std::string_view fullTagName(std::string_view name)
+    {
+      for (const TagAlias& alias : tagAliases)
+      {
+        if (name == alias.shortName)
+        {
+          return alias.fullName;
+        }
+      }
+      return name;
+    }
+
+    // 色の名前はTeller::Colorの定数と同じ綴り
+    struct NamedColor
+    {
+      std::string_view name;
+      std::uint32_t rgb;
+    };
+
+    constexpr NamedColor namedColors[] = {
+      { "black", 0x000000 },
+      { "white", 0xFFFFFF },
+      { "red", 0xFF0000 },
+      { "green", 0x00FF00 },
+      { "blue", 0x0000FF },
+      { "yellow", 0xFFFF00 },
+      { "cyan", 0x00FFFF },
+      { "magenta", 0xFF00FF },
+    };
+
+    int hexDigit(char c)
+    {
+      if (c >= '0' && c <= '9')
+      {
+        return c - '0';
+      }
+      if (c >= 'A' && c <= 'F')
+      {
+        return c - 'A' + 10;
+      }
+      if (c >= 'a' && c <= 'f')
+      {
+        return c - 'a' + 10;
+      }
+      return -1;
+    }
+
+    // 色の名前か#RRGGBB
+    bool parseColor(std::string_view text, std::uint32_t& rgb)
+    {
+      for (const NamedColor& named : namedColors)
+      {
+        if (text == named.name)
+        {
+          rgb = named.rgb;
+          return true;
+        }
+      }
+      if (text.size() != 7 || text.front() != '#')
+      {
+        return false;
+      }
+      std::uint32_t value = 0;
+      for (std::size_t i = 1; i < text.size(); ++i)
+      {
+        const int digit = hexDigit(text[i]);
+        if (digit < 0)
+        {
+          return false;
+        }
+        value = value * 16 + static_cast<std::uint32_t>(digit);
+      }
+      rgb = value;
+      return true;
+    }
+
+    std::string_view trimSpaces(std::string_view text)
+    {
+      while (!text.empty() && text.front() == ' ')
+      {
+        text.remove_prefix(1);
+      }
+      while (!text.empty() && text.back() == ' ')
+      {
+        text.remove_suffix(1);
+      }
+      return text;
+    }
+
+    bool isAsciiLetter(char c)
+    {
+      return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
+    }
+
+    struct TagParts
+    {
+      std::string_view name;
+      std::string_view value;
+      bool hasValue = false;
+    };
+
+    // =があれば前後で分ける
+    // 略称の直後に値を続けた[s10]は先頭の英字を名前にし、[speed10]は受け付けない
+    // [cred]はcの後ろが色の名前のときに限り[c=red]として読む
+    TagParts splitTag(std::string_view body)
+    {
+      const std::size_t equals = body.find('=');
+      if (equals != std::string_view::npos)
+      {
+        return { body.substr(0, equals), body.substr(equals + 1), true };
+      }
+      std::size_t letters = 0;
+      while (letters < body.size() && isAsciiLetter(body[letters]))
+      {
+        ++letters;
+      }
+      const std::string_view head = body.substr(0, letters);
+      if (letters < body.size() && isAbbreviation(head))
+      {
+        return { head, body.substr(letters), true };
+      }
+      std::uint32_t unused = 0;
+      if (body.size() > 1 && body.front() == 'c' && parseColor(body.substr(1), unused))
+      {
+        return { body.substr(0, 1), body.substr(1), true };
+      }
+      return { body, std::string_view(), false };
+    }
+
+    // 縁取りのタグ1つ分
+    struct OutlineLayer
+    {
+      int width = 0;
+      std::uint32_t color = 0;
+    };
+
+    // 値を省略すると1px
+    bool readOutlineWidth(const TagParts& parts, int& width)
+    {
+      if (!parts.hasValue)
+      {
+        width = 1;
+        return true;
+      }
+      double number = 0.0;
+      std::string_view unit;
+      if (!splitValue(parts.value, number, unit) || !(unit.empty() || unit == "px") || number != std::floor(number) || number > maxOutline)
+      {
+        return false;
+      }
+      width = static_cast<int>(number);
+      return true;
+    }
+
     struct MarkupReader
     {
       TextScript script;
@@ -155,8 +340,58 @@ namespace Teller::Internal
       // 一番下はフォントの.speed
       std::vector<std::int64_t> intervals;
 
+      // フォントの設定
+      TextStyle baseStyle;
+
+      // 開いたままの数で、重ねたときは全て閉じるまで効かせる
+      int boldDepth = 0;
+      int italicDepth = 0;
+      int underlineDepth = 0;
+      int strikethroughDepth = 0;
+
+      // 一番下はフォントの設定
+      std::vector<OutlineLayer> outlines;
+
+      // 一番下は白
+      std::vector<std::uint32_t> colors;
+
       // 1文字目の前には間隔を空けない
       bool hasLetter = false;
+
+      [[nodiscard]] TextStyle currentStyle() const
+      {
+        TextStyle style;
+        style.bold = baseStyle.bold || boldDepth > 0;
+        style.italic = baseStyle.italic || italicDepth > 0;
+        style.underline = baseStyle.underline || underlineDepth > 0;
+        style.strikethrough = baseStyle.strikethrough || strikethroughDepth > 0;
+        style.outline = outlines.back().width;
+        style.outlineColor = outlines.back().color;
+        style.color = colors.back();
+        return style;
+      }
+
+      // 値を持たない見た目のタグでなければnullptr
+      int* depthOf(std::string_view name)
+      {
+        if (name == "bold")
+        {
+          return &boldDepth;
+        }
+        if (name == "italic")
+        {
+          return &italicDepth;
+        }
+        if (name == "underline")
+        {
+          return &underlineDepth;
+        }
+        if (name == "strikethrough")
+        {
+          return &strikethroughDepth;
+        }
+        return nullptr;
+      }
 
       void addLetter(char32_t letter)
       {
@@ -175,6 +410,123 @@ namespace Teller::Internal
         }
         script.letters.push_back(letter);
         script.appearAt.push_back(cursor);
+        script.styles.push_back(currentStyle());
+      }
+
+      void applyClosingTag(std::string_view body)
+      {
+        const std::string_view name = fullTagName(body.substr(1));
+        if (name == "speed" || name == "outline" || name == "color")
+        {
+          auto pop = [&body](auto& stack)
+          {
+            if (stack.size() > 1)
+            {
+              stack.pop_back();
+            }
+            else
+            {
+              warnMarkup("closing tag without opening tag", body);
+            }
+          };
+          if (name == "speed")
+          {
+            pop(intervals);
+          }
+          else if (name == "outline")
+          {
+            pop(outlines);
+          }
+          else
+          {
+            pop(colors);
+          }
+          return;
+        }
+        if (int* depth = depthOf(name))
+        {
+          if (*depth > 0)
+          {
+            --*depth;
+          }
+          else
+          {
+            warnMarkup("closing tag without opening tag", body);
+          }
+          return;
+        }
+        if (name == "wait")
+        {
+          warnMarkup("[wait] has no closing tag", body);
+          return;
+        }
+        warnMarkup("unknown tag", body);
+      }
+
+      // [color=green,outline=2_px]や[o2,green]で、並びは自由
+      // 縁取りのタグとして積む
+      void applyOutlineWithColor(std::string_view body)
+      {
+        bool hasOutline = false;
+        bool hasColor = false;
+        int width = 0;
+        std::uint32_t color = 0;
+
+        std::size_t start = 0;
+        while (start <= body.size())
+        {
+          const std::size_t comma = std::min(body.find(',', start), body.size());
+          const std::string_view item = trimSpaces(body.substr(start, comma - start));
+          start = comma + 1;
+
+          const TagParts parts = splitTag(item);
+          const std::string_view name = fullTagName(parts.name);
+          if (name == "outline")
+          {
+            if (hasOutline)
+            {
+              warnMarkup("[outline] is written twice", body);
+              return;
+            }
+            if (!readOutlineWidth(parts, width))
+            {
+              warnMarkup("[outline] needs a whole number like 1_px", body);
+              return;
+            }
+            hasOutline = true;
+            continue;
+          }
+
+          // 項目名のない色も受け付ける
+          const bool namedItem = name == "color";
+          std::uint32_t rgb = 0;
+          if ((namedItem && parts.hasValue && parseColor(parts.value, rgb)) || (!namedItem && parseColor(item, rgb)))
+          {
+            if (hasColor)
+            {
+              warnMarkup("[color] is written twice", body);
+              return;
+            }
+            hasColor = true;
+            color = rgb;
+            continue;
+          }
+          if (namedItem)
+          {
+            warnMarkup("[color] needs a color like white or #FFFFFF", body);
+            return;
+          }
+          warnMarkup("only [outline] and [color] can be joined with a comma", body);
+          return;
+        }
+
+        if (!hasOutline)
+        {
+          warnMarkup("a tag joined with a comma needs [outline]", body);
+          return;
+        }
+        // 色を省くと外側の縁の色を引き継ぐ
+        outlines.push_back({ width, hasColor ? color : outlines.back().color });
       }
 
       // bodyは角括弧の内側
@@ -182,32 +534,23 @@ namespace Teller::Internal
       {
         if (!body.empty() && body.front() == '/')
         {
-          const std::string_view name = body.substr(1);
-          if (name == "speed")
-          {
-            if (intervals.size() > 1)
-            {
-              intervals.pop_back();
-            }
-            else
-            {
-              warnMarkup("[/speed] without [speed]", body);
-            }
-            return;
-          }
-          warnMarkup("unknown tag", body);
+          applyClosingTag(body);
+          return;
+        }
+        if (body.find(',') != std::string_view::npos)
+        {
+          applyOutlineWithColor(body);
           return;
         }
 
-        const std::size_t equals = body.find('=');
-        const std::string_view name = body.substr(0, equals);
-        const std::string_view value = equals == std::string_view::npos ? std::string_view() : body.substr(equals + 1);
+        const TagParts parts = splitTag(body);
+        const std::string_view name = fullTagName(parts.name);
 
         if (name == "speed")
         {
           double number = 0.0;
           std::string_view unit;
-          if (equals == std::string_view::npos || !splitValue(value, number, unit) || !(unit.empty() || unit == "lps"))
+          if (!parts.hasValue || !splitValue(parts.value, number, unit) || !(unit.empty() || unit == "lps"))
           {
             warnMarkup("[speed] needs a value like 15_lps", body);
             return;
@@ -220,7 +563,7 @@ namespace Teller::Internal
         {
           double number = 0.0;
           std::string_view unit;
-          if (equals == std::string_view::npos || !splitValue(value, number, unit))
+          if (!parts.hasValue || !splitValue(parts.value, number, unit))
           {
             warnMarkup("[wait] needs a value like 1_sec, 500_ms or 10_frames", body);
             return;
@@ -248,16 +591,56 @@ namespace Teller::Internal
           return;
         }
 
+        if (name == "outline")
+        {
+          int width = 0;
+          if (!readOutlineWidth(parts, width))
+          {
+            warnMarkup("[outline] needs a whole number like 1_px", body);
+            return;
+          }
+          // 色は外側の縁の色を引き継ぐ
+          outlines.push_back({ width, outlines.back().color });
+          return;
+        }
+
+        // outlineのない[color]は文字の色
+        if (name == "color")
+        {
+          std::uint32_t rgb = 0;
+          if (!parts.hasValue || !parseColor(parts.value, rgb))
+          {
+            warnMarkup("[color] needs a color like white or #FFFFFF", body);
+            return;
+          }
+          colors.push_back(rgb);
+          return;
+        }
+
+        if (int* depth = depthOf(name))
+        {
+          if (parts.hasValue)
+          {
+            warnMarkup("this tag takes no value", body);
+            return;
+          }
+          ++*depth;
+          return;
+        }
+
         // 未対応のタグは読み飛ばす
         warnMarkup("unknown tag", body);
       }
     };
   }
 
-  TextScript parseTextMarkup(std::string_view text, double speed)
+  TextScript parseTextMarkup(std::string_view text, double speed, const TextStyle& baseStyle)
   {
     MarkupReader reader;
     reader.intervals.push_back(letterInterval(speed));
+    reader.baseStyle = baseStyle;
+    reader.outlines.push_back({ baseStyle.outline, baseStyle.outlineColor });
+    reader.colors.push_back(baseStyle.color);
 
     std::size_t index = 0;
     while (index < text.size())
