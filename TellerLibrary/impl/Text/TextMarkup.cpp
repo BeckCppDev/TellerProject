@@ -357,6 +357,79 @@ namespace Teller::Internal
       // 1文字目の前には間隔を空けない
       bool hasLetter = false;
 
+      // 警告の文に使う
+      std::string_view markup;
+
+      std::span<const TextValue> values;
+      std::size_t nextValue = 0;
+
+      // タグの中も含めた{}の数
+      std::size_t placeholders = 0;
+
+      // 値が残っていなければ{}をそのまま描く
+      void addValue()
+      {
+        ++placeholders;
+        if (nextValue >= values.size())
+        {
+          addLetter(U'{');
+          addLetter(U'}');
+          return;
+        }
+        const TextValue& value = values[nextValue++];
+        if (value.isColor)
+        {
+          warnMarkup("a Color can be put only in {} inside a tag", markup);
+          return;
+        }
+        // 値の中の[と]はタグとして読まない
+        std::size_t index = 0;
+        while (index < value.text.size())
+        {
+          addLetter(nextCodepoint(value.text, index));
+        }
+      }
+
+      // {}を色の#RRGGBBに置き換える
+      // 色でない値か足りない値があればfalseを返す
+      bool fillTagValues(std::string_view body, std::string& filled)
+      {
+        bool usable = true;
+        std::size_t start = 0;
+        while (true)
+        {
+          const std::size_t open = body.find("{}", start);
+          if (open == std::string_view::npos)
+          {
+            filled += body.substr(start);
+            return usable;
+          }
+          filled += body.substr(start, open - start);
+          start = open + 2;
+          ++placeholders;
+
+          // 足りない値は最後に{}の数の警告で知らせる
+          if (nextValue >= values.size())
+          {
+            usable = false;
+            continue;
+          }
+          const TextValue& value = values[nextValue++];
+          if (!value.isColor)
+          {
+            warnMarkup("only a Color can be put in {} inside a tag", body);
+            usable = false;
+            continue;
+          }
+          constexpr char digits[] = "0123456789ABCDEF";
+          filled += '#';
+          for (int shift = 20; shift >= 0; shift -= 4)
+          {
+            filled += digits[(value.rgb >> shift) & 0xF];
+          }
+        }
+      }
+
       [[nodiscard]] TextStyle currentStyle() const
       {
         TextStyle style;
@@ -641,13 +714,15 @@ namespace Teller::Internal
     };
   }
 
-  TextScript parseTextMarkup(std::string_view text, double speed, const TextStyle& baseStyle)
+  TextScript parseTextMarkup(std::string_view text, double speed, const TextStyle& baseStyle, std::span<const TextValue> values, bool checkValueCount)
   {
     MarkupReader reader;
     reader.intervals.push_back(letterInterval(speed));
     reader.baseStyle = baseStyle;
     reader.outlines.push_back({ baseStyle.outline, baseStyle.outlineColor });
     reader.colors.push_back(baseStyle.color);
+    reader.markup = text;
+    reader.values = values;
 
     std::size_t index = 0;
     while (index < text.size())
@@ -655,10 +730,18 @@ namespace Teller::Internal
       const char current = text[index];
       const bool doubled = index + 1 < text.size() && text[index + 1] == current;
 
-      // [[と]]は角括弧そのものを表す
-      if ((current == '[' || current == ']') && doubled)
+      // [[と]]は角括弧そのもの、{{と}}は波括弧そのものを表す
+      if ((current == '[' || current == ']' || current == '{' || current == '}') && doubled)
       {
         reader.addLetter(static_cast<char32_t>(current));
+        index += 2;
+        continue;
+      }
+
+      // {}には次の値を入れる
+      if (current == '{' && index + 1 < text.size() && text[index + 1] == '}')
+      {
+        reader.addValue();
         index += 2;
         continue;
       }
@@ -674,13 +757,29 @@ namespace Teller::Internal
           ++index;
           continue;
         }
-        reader.applyTag(text.substr(index + 1, close - index - 1));
+        const std::string_view body = text.substr(index + 1, close - index - 1);
         index = close + 1;
+        if (body.find("{}") == std::string_view::npos)
+        {
+          reader.applyTag(body);
+          continue;
+        }
+        // 色を入れられなかったタグは無視する
+        std::string filled;
+        if (reader.fillTagValues(body, filled))
+        {
+          reader.applyTag(filled);
+        }
         continue;
       }
 
-      // 対のない]も文字として描く
+      // 対のない]、{、}も文字として描く
       reader.addLetter(nextCodepoint(text, index));
+    }
+
+    if (checkValueCount && reader.placeholders != values.size())
+    {
+      warnMarkup("the number of {} and the number of values do not match", text);
     }
 
     reader.script.end = reader.cursor;

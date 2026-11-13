@@ -1,6 +1,9 @@
 #pragma once
 
+#include <Teller/Asset/Font.hpp>
+
 #include <cstdint>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -60,9 +63,20 @@ namespace Teller::Internal
     TextMoment end;
   };
 
+  // Font::text()に渡した文字列とフォントの設定
+  // {}の値が変わるたびに読み直す
+  struct TextSource
+  {
+    std::string markup;
+    double speed = 0.0;
+    TextStyle baseStyle;
+  };
+
   // speedは1秒あたりの文字数で、0以下なら一度に出す
   // baseStyleはタグのない部分の見た目
-  [[nodiscard]] TextScript parseTextMarkup(std::string_view text, double speed, const TextStyle& baseStyle);
+  // valuesは{}に出てきた順に入れる
+  // checkValueCountがtrueなら{}と値の数の食い違いを警告する
+  [[nodiscard]] TextScript parseTextMarkup(std::string_view text, double speed, const TextStyle& baseStyle, std::span<const TextValue> values = {}, bool checkValueCount = false);
 
   // 最初のshow()を0として、その時刻に達する最初のフレームを返す
   [[nodiscard]] std::uint64_t momentToFrames(const TextMoment& moment, int fps);

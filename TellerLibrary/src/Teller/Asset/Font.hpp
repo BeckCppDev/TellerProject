@@ -8,11 +8,16 @@
 #include <Teller/Units/Length.hpp>
 #include <Teller/Units/Position.hpp>
 
+#include <charconv>
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <string>
 #include <string_view>
+#include <type_traits>
+#include <vector>
 
 namespace Teller
 {
@@ -23,6 +28,81 @@ namespace Teller
   {
     struct FontData;
     struct TextScript;
+    struct TextSource;
+
+    // {}に入れる値
+    // 色はタグの中にだけ入れるので文字にしない
+    struct TextValue
+    {
+      // isColorがtrueの間は使わない
+      std::string text;
+
+      bool isColor = false;
+
+      // 0xRRGGBB
+      std::uint32_t rgb = 0;
+
+      [[nodiscard]] bool operator==(const TextValue&) const = default;
+    };
+
+    // 位置やAnchorを値と取り違えないよう型を限る
+    // charは文字として描く
+    template <typename T>
+    concept TextValueType = std::same_as<T, Color> || ((std::integral<T> || std::floating_point<T>) && !std::same_as<T, wchar_t> && !std::same_as<T, char8_t> && !std::same_as<T, char16_t> && !std::same_as<T, char32_t>) || std::convertible_to<const T&, std::string_view>;
+
+    // 小数はstd::formatの{}と同じ最短の表し方にする
+    template <TextValueType T>
+    [[nodiscard]] TextValue toTextValue(const T& value)
+    {
+      TextValue result;
+      if constexpr (std::same_as<T, Color>)
+      {
+        result.isColor = true;
+        result.rgb = (static_cast<std::uint32_t>(value.r()) << 16) | (static_cast<std::uint32_t>(value.g()) << 8) | value.b();
+      }
+      else if constexpr (std::same_as<T, bool>)
+      {
+        result.text = value ? "true" : "false";
+      }
+      else if constexpr (std::same_as<T, char>)
+      {
+        result.text.assign(1, value);
+      }
+      else if constexpr (std::floating_point<T>)
+      {
+        // doubleの最短の表し方は24文字以内
+        char buffer[64];
+        const std::to_chars_result converted = std::to_chars(buffer, buffer + sizeof(buffer), value);
+        result.text.assign(buffer, converted.ptr);
+      }
+      else if constexpr (std::integral<T>)
+      {
+        char buffer[32];
+        std::to_chars_result converted;
+        if constexpr (std::signed_integral<T>)
+        {
+          converted = std::to_chars(buffer, buffer + sizeof(buffer), static_cast<long long>(value));
+        }
+        else
+        {
+          converted = std::to_chars(buffer, buffer + sizeof(buffer), static_cast<unsigned long long>(value));
+        }
+        result.text.assign(buffer, converted.ptr);
+      }
+      else
+      {
+        // nullptrは空の文字列
+        if constexpr (std::is_pointer_v<T>)
+        {
+          if (value == nullptr)
+          {
+            return result;
+          }
+        }
+        result.text = std::string_view(value);
+      }
+      return result;
+    }
   }
 
   // Asset::font()に渡す設定
@@ -89,6 +169,10 @@ namespace Teller
     // 閉じタグは正式名称と略称のどちらでもよく、[b]を[/bold]で閉じられる
     // [speed]は[s15]、[wait]は[w0.5]と略せる
     // [[と]]は角括弧そのもの
+    // {}にはText::show()に渡した値が出てきた順に入る
+    // 値の中の[と]はタグとして読まない
+    // タグの中の{}にはColorだけを入れられる([o2,{}]、[{}])
+    // {{と}}は波括弧そのもの
     [[nodiscard]] Text text(std::string_view text, TextConfig config = {}) const;
 
   private:
@@ -129,6 +213,31 @@ namespace Teller
     // 箱はまだ出していない文字も含めて決める
     Progress show(Position position, Anchor anchor);
 
+    // 以下の3つは位置と寄せ方の後ろに{}の値を並べる(msg.show({0, 0}, hp, maxHp))
+    // 値が変わっても進み具合は続き、各文字が出る時刻は新しい文字列で決め直す
+    // {}と値の数が合わないとデバッグビルドで1度だけ警告し、値のない{}はそのまま描く
+    template <Internal::TextValueType... Values>
+      requires(sizeof...(Values) > 0)
+    Progress show(Position position, Anchor anchor, const Values&... values)
+    {
+      return showWithValues(position, anchor, { Internal::toTextValue(values)... });
+    }
+
+    template <Internal::TextValueType... Values>
+      requires(sizeof...(Values) > 0)
+    Progress show(Position position, const Values&... values)
+    {
+      return showWithValues(position, anchor_, { Internal::toTextValue(values)... });
+    }
+
+    // 位置を省略すると画面の中央
+    template <Internal::TextValueType... Values>
+      requires(sizeof...(Values) > 0)
+    Progress show(const Values&... values)
+    {
+      return showWithValues(Position::central, anchor_, { Internal::toTextValue(values)... });
+    }
+
     // 最後のshow()の時点の値で、呼ぶ前はstarted
     // 一度に全部出す文は最初のshow()からfinished
     [[nodiscard]] Progress getProgress() const;
@@ -142,15 +251,27 @@ namespace Teller
   private:
     friend class Font;
 
-    Text(const std::weak_ptr<Internal::FontData>& data, std::shared_ptr<const Internal::TextScript> script, int size, bool antialias, Anchor anchor);
+    Text(const std::weak_ptr<Internal::FontData>& data, std::shared_ptr<const Internal::TextSource> source, int size, bool antialias, Anchor anchor);
+
+    Progress showWithValues(Position position, Anchor anchor, std::vector<Internal::TextValue> values);
 
     // 出す文字の数を返す
     std::size_t advance();
 
     std::weak_ptr<Internal::FontData> data_;
 
+    // text()に渡した文字列とフォントの設定
     // 変わらないのでコピーと共有する
+    std::shared_ptr<const Internal::TextSource> source_;
+
+    // 値が変わると作り直すのでコピーと共有してよい
     std::shared_ptr<const Internal::TextScript> script_;
+
+    // script_を作ったときの値
+    std::vector<Internal::TextValue> values_;
+
+    // {}の数の警告は最初のshow()で読み直すときに出す
+    bool parsedForShow_ = false;
 
     int size_ = 16;
     bool antialias_ = false;

@@ -354,17 +354,21 @@ namespace Teller
     baseStyle.strikethrough = strikethrough_;
     baseStyle.outline = outline_;
     baseStyle.outlineColor = { outlineColor_, false };
-    auto script = std::make_shared<const Internal::TextScript>(Internal::parseTextMarkup(text, speed_, baseStyle));
-    return Text(data_, std::move(script), size, antialias_, anchor_);
+    auto source = std::make_shared<Internal::TextSource>();
+    source->markup = text;
+    source->speed = speed_;
+    source->baseStyle = baseStyle;
+    return Text(data_, std::move(source), size, antialias_, anchor_);
   }
 
-  Text::Text(const std::weak_ptr<Internal::FontData>& data, std::shared_ptr<const Internal::TextScript> script, int size, bool antialias, Anchor anchor)
+  Text::Text(const std::weak_ptr<Internal::FontData>& data, std::shared_ptr<const Internal::TextSource> source, int size, bool antialias, Anchor anchor)
     : data_(data)
-    , script_(std::move(script))
+    , source_(std::move(source))
     , size_(size)
     , antialias_(antialias)
     , anchor_(anchor)
   {
+    script_ = std::make_shared<const Internal::TextScript>(Internal::parseTextMarkup(source_->markup, source_->speed, source_->baseStyle));
   }
 
   std::size_t Text::advance()
@@ -472,6 +476,19 @@ namespace Teller
 
   Progress Text::show(Position position, Anchor anchor)
   {
+    return showWithValues(position, anchor, {});
+  }
+
+  Progress Text::showWithValues(Position position, Anchor anchor, std::vector<Internal::TextValue> values)
+  {
+    // 進み具合はshownFrames_に残るので、読み直しても続きから出る
+    if (source_ != nullptr && (!parsedForShow_ || values != values_))
+    {
+      script_ = std::make_shared<const Internal::TextScript>(Internal::parseTextMarkup(source_->markup, source_->speed, source_->baseStyle, values, true));
+      values_ = std::move(values);
+      parsedForShow_ = true;
+    }
+
     // ゲームの進行がフォントの有無に左右されないよう、描く前に進める
     const std::size_t visibleLetters = advance();
 
