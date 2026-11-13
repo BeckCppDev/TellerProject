@@ -280,7 +280,6 @@ namespace Teller::Internal
 
     // =があれば前後で分ける
     // 略称の直後に値を続けた[s10]は先頭の英字を名前にし、[speed10]は受け付けない
-    // [cred]はcの後ろが色の名前のときに限り[c=red]として読む
     TagParts splitTag(std::string_view body)
     {
       const std::size_t equals = body.find('=');
@@ -297,11 +296,6 @@ namespace Teller::Internal
       if (letters < body.size() && isAbbreviation(head))
       {
         return { head, body.substr(letters), true };
-      }
-      std::uint32_t unused = 0;
-      if (body.size() > 1 && body.front() == 'c' && parseColor(body.substr(1), unused))
-      {
-        return { body.substr(0, 1), body.substr(1), true };
       }
       return { body, std::string_view(), false };
     }
@@ -613,6 +607,14 @@ namespace Teller::Internal
             warnMarkup("[color] needs a color like white or #FFFFFF", body);
             return;
           }
+          colors.push_back(rgb);
+          return;
+        }
+
+        // 略称の[green]と[#00FF00]
+        // 閉じるのは[/color]か[/c]だけ
+        if (std::uint32_t rgb = 0; parseColor(body, rgb))
+        {
           colors.push_back(rgb);
           return;
         }

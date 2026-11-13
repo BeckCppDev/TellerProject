@@ -82,7 +82,7 @@ namespace Teller
     // 単位はsec、ms、framesで、省略すると秒
     // [bold](略称[b])、[italic]([i])、[underline]([u])、[strikethrough]([st])は閉じるまで見た目を変える
     // [outline=2_px]([o2])は閉じるまで縁取りし、値を省略すると1px
-    // [color=red]([c=red]、[cred])は閉じるまで文字の色を変え、色はColorの定数の名前か#FF0000
+    // [color=red]([red]、[c=red])は[/color]か[/c]で閉じるまで文字の色を変え、色はColorの定数の名前か#FF0000
     // [color=green,outline=2_px]は縁の色と太さを変えて[/outline]で閉じ、並びは自由
     // 略称では色の項目名を省いて[o2,green]と書ける
     // 閉じタグは正式名称と略称のどちらでもよく、[b]を[/bold]で閉じられる
