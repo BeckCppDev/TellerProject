@@ -19,6 +19,16 @@ namespace Teller::Internal
   // 文字の絵の大きさが桁あふれしないよう縁の太さを抑える
   constexpr int maxOutline = 1'000;
 
+  // 文字や縁の色
+  struct TextColor
+  {
+    // 0xRRGGBB
+    std::uint32_t rgb = 0xFFFFFF;
+
+    // trueなら描く周期ごとに色が変わり、rgbは使わない
+    bool rainbow = false;
+  };
+
   // 1文字ごとの見た目
   struct TextStyle
   {
@@ -30,9 +40,8 @@ namespace Teller::Internal
     // 0なら縁取りなし
     int outline = 0;
 
-    // 0xRRGGBB
-    std::uint32_t color = 0xFFFFFF;
-    std::uint32_t outlineColor = 0x000000;
+    TextColor color{ 0xFFFFFF };
+    TextColor outlineColor{ 0x000000 };
   };
 
   // タグを取り除いた文と各文字が出る時刻

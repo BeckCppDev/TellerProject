@@ -56,8 +56,8 @@ namespace Teller::Internal
 
   namespace
   {
-    // 濃さを透明度にし、全ての点を0xRRGGBBの色で塗る
-    std::shared_ptr<ImageData> makeAlphaImage(const void* source, const unsigned char* alpha, int width, int height, std::uint32_t color)
+    // 濃さを透明度にした白い絵を作り、色は描くときに掛ける
+    std::shared_ptr<ImageData> makeAlphaImage(const void* source, const unsigned char* alpha, int width, int height)
     {
       if (width <= 0 || height <= 0)
       {
@@ -75,9 +75,9 @@ namespace Teller::Internal
         for (int x = 0; x < width; ++x)
         {
           unsigned char* pixel = row + static_cast<std::ptrdiff_t>(x) * 4;
-          pixel[0] = static_cast<unsigned char>(color >> 16);
-          pixel[1] = static_cast<unsigned char>(color >> 8);
-          pixel[2] = static_cast<unsigned char>(color);
+          pixel[0] = 255;
+          pixel[1] = 255;
+          pixel[2] = 255;
           pixel[3] = alpha == nullptr ? 255 : alpha[static_cast<std::size_t>(y) * static_cast<std::size_t>(width) + static_cast<std::size_t>(x)];
         }
       }
@@ -88,9 +88,9 @@ namespace Teller::Internal
       return image;
     }
 
-    const CachedGlyph& findGlyph(FontData& font, int glyph, int size, const GlyphStyle& style, std::uint32_t color)
+    const CachedGlyph& findGlyph(FontData& font, int glyph, int size, const GlyphStyle& style)
     {
-      const GlyphKey key{ glyph, size, style, color };
+      const GlyphKey key{ glyph, size, style };
       if (const auto found = font.glyphs.find(key); found != font.glyphs.end())
       {
         return found->second;
@@ -98,7 +98,7 @@ namespace Teller::Internal
 
       const GlyphBitmap bitmap = font.file->render(glyph, size, style);
       CachedGlyph cached;
-      cached.image = makeAlphaImage(font.source, bitmap.alpha.data(), bitmap.width, bitmap.height, color);
+      cached.image = makeAlphaImage(font.source, bitmap.alpha.data(), bitmap.width, bitmap.height);
       cached.left = bitmap.left;
       cached.top = bitmap.top;
       cached.advance = bitmap.advance;
@@ -106,14 +106,14 @@ namespace Teller::Internal
     }
 
     // 下線と取り消し線は1文字ごとに送り幅の長さの四角を描いてつなげる
-    std::shared_ptr<ImageData> findLineImage(FontData& font, int width, int height, std::uint32_t color)
+    std::shared_ptr<ImageData> findLineImage(FontData& font, int width, int height)
     {
-      const LineImageKey key{ width, height, color };
+      const LineImageKey key{ width, height };
       if (const auto found = font.lineImages.find(key); found != font.lineImages.end())
       {
         return found->second;
       }
-      std::shared_ptr<ImageData> image = makeAlphaImage(font.source, nullptr, width, height, color);
+      std::shared_ptr<ImageData> image = makeAlphaImage(font.source, nullptr, width, height);
       font.lineImages.emplace(key, image);
       return image;
     }
@@ -128,6 +128,9 @@ namespace Teller::Internal
 
       // TextScript::lettersの何文字目か
       std::size_t letter = 0;
+
+      // 虹色の色はshow()で決める
+      TextColor color;
     };
 
     struct Layout
@@ -179,19 +182,19 @@ namespace Teller::Internal
         const int baseline = lineTop + metrics.ascent;
 
         // findGlyphの戻り値は、後で別の文字を探してもunordered_mapの仕様で無効にならない
-        const CachedGlyph& cached = findGlyph(font, glyph, size, style, textStyle.color);
+        const CachedGlyph& cached = findGlyph(font, glyph, size, style);
         if (cached.image != nullptr)
         {
-          layout.fills.push_back({ cached.image, penX + cached.left, baseline + cached.top, line, index });
+          layout.fills.push_back({ cached.image, penX + cached.left, baseline + cached.top, line, index, textStyle.color });
         }
         if (textStyle.outline > 0)
         {
           GlyphStyle ringStyle = style;
           ringStyle.outline = textStyle.outline;
-          const CachedGlyph& ring = findGlyph(font, glyph, size, ringStyle, textStyle.outlineColor);
+          const CachedGlyph& ring = findGlyph(font, glyph, size, ringStyle);
           if (ring.image != nullptr)
           {
-            layout.rings.push_back({ ring.image, penX + ring.left, baseline + ring.top, line, index });
+            layout.rings.push_back({ ring.image, penX + ring.left, baseline + ring.top, line, index, textStyle.outlineColor });
           }
         }
 
@@ -201,12 +204,12 @@ namespace Teller::Internal
           const LineMetrics ringMetrics = textStyle.outline > 0 ? font.file->lineMetrics(size, textStyle.outline) : metrics;
           const auto addLine = [&](int fillTop, int ringTop)
           {
-            layout.fills.push_back({ findLineImage(font, cached.advance, metrics.lineThickness, textStyle.color), penX, lineTop + fillTop, line, index });
+            layout.fills.push_back({ findLineImage(font, cached.advance, metrics.lineThickness), penX, lineTop + fillTop, line, index, textStyle.color });
             if (textStyle.outline > 0)
             {
               // 縁の分だけ左右にも広げる
               const int ringWidth = cached.advance + 2 * textStyle.outline;
-              layout.rings.push_back({ findLineImage(font, ringWidth, ringMetrics.lineThickness, textStyle.outlineColor), penX - textStyle.outline, lineTop + ringTop, line, index });
+              layout.rings.push_back({ findLineImage(font, ringWidth, ringMetrics.lineThickness), penX - textStyle.outline, lineTop + ringTop, line, index, textStyle.outlineColor });
             }
           };
           if (textStyle.underline)
@@ -227,6 +230,54 @@ namespace Teller::Internal
       layout.width = *std::max_element(layout.lineWidths.begin(), layout.lineWidths.end());
       layout.height = line * metrics.lineSkip + metrics.height;
       return layout;
+    }
+
+    constexpr std::uint64_t rainbowSeconds = 2;
+
+    // timer()のフレーム数から0xRRGGBBで返す
+    // TASで再現できるよう整数だけで計算する
+    std::uint32_t rainbowColor()
+    {
+      const int fps = clockFps();
+      const std::uint64_t period = rainbowSeconds * static_cast<std::uint64_t>(fps > 0 ? fps : 1);
+
+      // 赤、黄、緑、水色、青、紫の6区間を255段階ずつ進む
+      const std::uint64_t position = clockFrames() % period * 6 * 255 / period;
+      const auto section = static_cast<int>(position / 255);
+      const auto rising = static_cast<std::uint32_t>(position % 255);
+      const std::uint32_t falling = 255 - rising;
+
+      std::uint32_t r = 0;
+      std::uint32_t g = 0;
+      std::uint32_t b = 0;
+      switch (section)
+      {
+        case 0:
+          r = 255;
+          g = rising;
+          break;
+        case 1:
+          r = falling;
+          g = 255;
+          break;
+        case 2:
+          g = 255;
+          b = rising;
+          break;
+        case 3:
+          g = falling;
+          b = 255;
+          break;
+        case 4:
+          r = rising;
+          b = 255;
+          break;
+        default:
+          r = 255;
+          b = falling;
+          break;
+      }
+      return (r << 16) | (g << 8) | b;
     }
 
     // 箱の幅や高さに掛ける割合の2倍
@@ -302,7 +353,7 @@ namespace Teller
     baseStyle.underline = underline_;
     baseStyle.strikethrough = strikethrough_;
     baseStyle.outline = outline_;
-    baseStyle.outlineColor = outlineColor_;
+    baseStyle.outlineColor = { outlineColor_, false };
     auto script = std::make_shared<const Internal::TextScript>(Internal::parseTextMarkup(text, speed_, baseStyle));
     return Text(data_, std::move(script), size, antialias_, anchor_);
   }
@@ -460,6 +511,8 @@ namespace Teller
     const double left = std::floor(position.x() - layout.width * halvesX / 2.0 + 0.5);
     const double top = std::floor(position.y() + layout.height * halvesY / 2.0 + 0.5);
 
+    const std::uint32_t rainbow = Internal::rainbowColor();
+
     const auto publish = [&](const std::vector<Internal::PlacedImage>& images)
     {
       for (const Internal::PlacedImage& placed : images)
@@ -475,7 +528,8 @@ namespace Teller
         // Windowは画像の中心の位置を受け取る
         const double centerX = left + lineOffset + placed.x + width / 2.0;
         const double centerY = top - placed.y - height / 2.0;
-        Internal::publishDraw({ placed.image, centerX, centerY });
+        const std::uint32_t tint = placed.color.rainbow ? rainbow : placed.color.rgb;
+        Internal::publishDraw({ placed.image, centerX, centerY, tint });
       }
     };
     publish(layout.rings);

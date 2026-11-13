@@ -224,14 +224,19 @@ namespace Teller::Internal
       return -1;
     }
 
-    // 色の名前か#RRGGBB
-    bool parseColor(std::string_view text, std::uint32_t& rgb)
+    // 色の名前か#RRGGBBかrainbow
+    bool parseColor(std::string_view text, TextColor& color)
     {
+      if (text == "rainbow")
+      {
+        color = { 0xFFFFFF, true };
+        return true;
+      }
       for (const NamedColor& named : namedColors)
       {
         if (text == named.name)
         {
-          rgb = named.rgb;
+          color = { named.rgb, false };
           return true;
         }
       }
@@ -249,7 +254,7 @@ namespace Teller::Internal
         }
         value = value * 16 + static_cast<std::uint32_t>(digit);
       }
-      rgb = value;
+      color = { value, false };
       return true;
     }
 
@@ -304,7 +309,7 @@ namespace Teller::Internal
     struct OutlineLayer
     {
       int width = 0;
-      std::uint32_t color = 0;
+      TextColor color{ 0x000000 };
     };
 
     // 値を省略すると1px
@@ -347,7 +352,7 @@ namespace Teller::Internal
       std::vector<OutlineLayer> outlines;
 
       // 一番下は白
-      std::vector<std::uint32_t> colors;
+      std::vector<TextColor> colors;
 
       // 1文字目の前には間隔を空けない
       bool hasLetter = false;
@@ -464,7 +469,7 @@ namespace Teller::Internal
         bool hasOutline = false;
         bool hasColor = false;
         int width = 0;
-        std::uint32_t color = 0;
+        TextColor color;
 
         std::size_t start = 0;
         while (start <= body.size())
@@ -493,8 +498,8 @@ namespace Teller::Internal
 
           // 項目名のない色も受け付ける
           const bool namedItem = name == "color";
-          std::uint32_t rgb = 0;
-          if ((namedItem && parts.hasValue && parseColor(parts.value, rgb)) || (!namedItem && parseColor(item, rgb)))
+          TextColor parsed;
+          if ((namedItem && parts.hasValue && parseColor(parts.value, parsed)) || (!namedItem && parseColor(item, parsed)))
           {
             if (hasColor)
             {
@@ -502,7 +507,7 @@ namespace Teller::Internal
               return;
             }
             hasColor = true;
-            color = rgb;
+            color = parsed;
             continue;
           }
           if (namedItem)
@@ -601,21 +606,21 @@ namespace Teller::Internal
         // outlineのない[color]は文字の色
         if (name == "color")
         {
-          std::uint32_t rgb = 0;
-          if (!parts.hasValue || !parseColor(parts.value, rgb))
+          TextColor parsed;
+          if (!parts.hasValue || !parseColor(parts.value, parsed))
           {
             warnMarkup("[color] needs a color like white or #FFFFFF", body);
             return;
           }
-          colors.push_back(rgb);
+          colors.push_back(parsed);
           return;
         }
 
-        // 略称の[green]と[#00FF00]
+        // 略称の[green]と[#00FF00]と[rainbow]
         // 閉じるのは[/color]か[/c]だけ
-        if (std::uint32_t rgb = 0; parseColor(body, rgb))
+        if (TextColor parsed; parseColor(body, parsed))
         {
-          colors.push_back(rgb);
+          colors.push_back(parsed);
           return;
         }
 

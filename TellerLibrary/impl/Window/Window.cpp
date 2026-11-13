@@ -261,6 +261,9 @@ namespace Teller::Internal
         width,
         height,
       };
+
+      // 同じ画像を別の色で描くことがあるので毎回設定する
+      SDL_SetTextureColorMod(texture, static_cast<Uint8>(message.tint >> 16), static_cast<Uint8>(message.tint >> 8), static_cast<Uint8>(message.tint));
       SDL_RenderTexture(renderer, texture, nullptr, &destination);
     }
 

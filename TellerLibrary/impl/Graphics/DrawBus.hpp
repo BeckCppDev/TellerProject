@@ -2,6 +2,7 @@
 
 #include <SDL3/SDL.h>
 
+#include <cstdint>
 #include <filesystem>
 #include <memory>
 #include <span>
@@ -41,6 +42,9 @@ namespace Teller::Internal
     std::shared_ptr<const ImageData> image;
     double x;
     double y;
+
+    // 画像に掛ける0xRRGGBBの色で、白なら元の色のまま
+    std::uint32_t tint = 0xFFFFFF;
   };
 
   class DrawListener

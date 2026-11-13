@@ -4,7 +4,6 @@
 #include <Text/FontFile.hpp>
 
 #include <cstddef>
-#include <cstdint>
 #include <filesystem>
 #include <functional>
 #include <map>
@@ -14,14 +13,12 @@
 namespace Teller::Internal
 {
   // 文字の絵の使い回しのキー
+  // 色は描くときに掛けるのでキーに含めない
   struct GlyphKey
   {
     int glyph = 0;
     int size = 0;
     GlyphStyle style;
-
-    // 0xRRGGBB
-    std::uint32_t color = 0;
 
     [[nodiscard]] bool operator==(const GlyphKey&) const noexcept = default;
   };
@@ -37,7 +34,6 @@ namespace Teller::Internal
       };
       mix(std::hash<int>{}(key.size));
       mix(std::hash<int>{}(key.style.outline));
-      mix(std::hash<std::uint32_t>{}(key.color));
       mix((key.style.antialias ? 1u : 0u) | (key.style.bold ? 2u : 0u) | (key.style.italic ? 4u : 0u));
       return hash;
     }
@@ -48,7 +44,6 @@ namespace Teller::Internal
   {
     int width = 0;
     int height = 0;
-    std::uint32_t color = 0;
 
     [[nodiscard]] auto operator<=>(const LineImageKey&) const noexcept = default;
   };

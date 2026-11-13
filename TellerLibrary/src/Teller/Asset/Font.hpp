@@ -85,6 +85,7 @@ namespace Teller
     // [color=red]([red]、[c=red])は[/color]か[/c]で閉じるまで文字の色を変え、色はColorの定数の名前か#FF0000
     // [color=green,outline=2_px]は縁の色と太さを変えて[/outline]で閉じ、並びは自由
     // 略称では色の項目名を省いて[o2,green]と書ける
+    // 色にrainbowと書くと2秒で色合いが一周する([rainbow]、[o2,rainbow])
     // 閉じタグは正式名称と略称のどちらでもよく、[b]を[/bold]で閉じられる
     // [speed]は[s15]、[wait]は[w0.5]と略せる
     // [[と]]は角括弧そのもの
