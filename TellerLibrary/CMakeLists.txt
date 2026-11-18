@@ -65,5 +65,6 @@ target_compile_features(TellerLibrary PUBLIC cxx_std_20)
 target_link_libraries(TellerLibrary
   PRIVATE
     SDL3::SDL3
+    SDL3_mixer::SDL3_mixer
     teller_project_options
 )
