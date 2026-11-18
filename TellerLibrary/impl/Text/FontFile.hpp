@@ -64,12 +64,14 @@ namespace Teller::Internal
     // フォントにない文字は0
     [[nodiscard]] int glyphIndex(char32_t codepoint) const;
 
-    [[nodiscard]] int kerning(int leftGlyph, int rightGlyph, int size) const;
+    // sizeは1emのピクセル数で、小数も受け付ける
+    [[nodiscard]] int kerning(int leftGlyph, int rightGlyph, double size) const;
 
-    [[nodiscard]] LineMetrics lineMetrics(int size, int outline = 0) const;
+    [[nodiscard]] LineMetrics lineMetrics(double size, int outline = 0) const;
 
     // その大きさの埋め込みのドット絵があれば輪郭より優先する
-    [[nodiscard]] GlyphBitmap render(int glyph, int size, const GlyphStyle& style) const;
+    // 埋め込みのドット絵は整数の大きさでだけ使う
+    [[nodiscard]] GlyphBitmap render(int glyph, double size, const GlyphStyle& style) const;
 
   private:
     struct Impl;

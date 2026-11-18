@@ -17,7 +17,7 @@ namespace Teller
     {
       if constexpr (std::same_as<T, Length>)
       {
-        return static_cast<double>(value.px());
+        return value.px();
       }
       else
       {

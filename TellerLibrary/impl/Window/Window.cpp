@@ -24,7 +24,7 @@ namespace Teller::Internal
     // SDL3の最小・最大サイズでは0が制限なしを表す
     int pxOrZero(const std::optional<Length>& value)
     {
-      return value ? value->px() : 0;
+      return value ? truncatedPx(*value) : 0;
     }
 
     struct OsWindowState
@@ -262,8 +262,9 @@ namespace Teller::Internal
         height,
       };
 
-      // 同じ画像を別の色で描くことがあるので毎回設定する
+      // 同じ画像を別の色や濃さで描くことがあるので毎回設定する
       SDL_SetTextureColorMod(texture, static_cast<Uint8>(message.tint >> 16), static_cast<Uint8>(message.tint >> 8), static_cast<Uint8>(message.tint));
+      SDL_SetTextureAlphaMod(texture, message.alpha);
       SDL_RenderTexture(renderer, texture, nullptr, &destination);
     }
 
@@ -405,14 +406,14 @@ namespace Teller
       {
         return SDL_WINDOWPOS_CENTERED;
       }
-      return value->px();
+      return Internal::truncatedPx(*value);
     };
 
     // 設定途中の姿を見せないよう、隠した状態で作って最後に表示する
     const SDL_PropertiesID props = SDL_CreateProperties();
     SDL_SetStringProperty(props, SDL_PROP_WINDOW_CREATE_TITLE_STRING, config.title.c_str());
-    SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_WIDTH_NUMBER, config.width.px());
-    SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_HEIGHT_NUMBER, config.height.px());
+    SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_WIDTH_NUMBER, Internal::truncatedPx(config.width));
+    SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_HEIGHT_NUMBER, Internal::truncatedPx(config.height));
     SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_X_NUMBER, position(config.x));
     SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_Y_NUMBER, position(config.y));
     SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_RESIZABLE_BOOLEAN, config.resizable);
@@ -432,8 +433,8 @@ namespace Teller
 
     if (state_->gameWidth == 0)
     {
-      state_->gameWidth = config.width.px();
-      state_->gameHeight = config.height.px();
+      state_->gameWidth = Internal::truncatedPx(config.width);
+      state_->gameHeight = Internal::truncatedPx(config.height);
     }
 
     state_->renderer = SDL_CreateRenderer(state_->handle, nullptr);
@@ -525,7 +526,7 @@ namespace Teller
   {
     if (state_->handle == nullptr)
     {
-      return state_->config.width.px();
+      return Internal::truncatedPx(state_->config.width);
     }
     return Internal::readOsWindowState(state_->handle).width;
   }
@@ -534,19 +535,19 @@ namespace Teller
   {
     if (state_->handle == nullptr)
     {
-      return state_->config.height.px();
+      return Internal::truncatedPx(state_->config.height);
     }
     return Internal::readOsWindowState(state_->handle).height;
   }
 
   Change Window::setWidth(Length width)
   {
-    return Change(state_->widthTransition, width.px());
+    return Change(state_->widthTransition, Internal::truncatedPx(width));
   }
 
   Change Window::setHeight(Length height)
   {
-    return Change(state_->heightTransition, height.px());
+    return Change(state_->heightTransition, Internal::truncatedPx(height));
   }
 
   int Window::getX() const
@@ -569,12 +570,12 @@ namespace Teller
 
   Change Window::setX(Length x)
   {
-    return Change(state_->xTransition, x.px());
+    return Change(state_->xTransition, Internal::truncatedPx(x));
   }
 
   Change Window::setY(Length y)
   {
-    return Change(state_->yTransition, y.px());
+    return Change(state_->yTransition, Internal::truncatedPx(y));
   }
 
   FrameRate Window::getSmoothRate() const

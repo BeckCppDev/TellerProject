@@ -45,6 +45,9 @@ namespace Teller::Internal
 
     // 画像に掛ける0xRRGGBBの色で、白なら元の色のまま
     std::uint32_t tint = 0xFFFFFF;
+
+    // 不透明度で、255なら元の濃さのまま
+    std::uint8_t alpha = 255;
   };
 
   class DrawListener

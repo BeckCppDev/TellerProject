@@ -2,6 +2,7 @@
 
 #include <cmath>
 #include <cstdlib>
+#include <limits>
 #include <utility>
 
 // 利用者が別に使うstb_truetypeと名前がぶつからないよう、このファイルの中だけで使う
@@ -44,14 +45,14 @@ namespace Teller::Internal
     }
 
     // FreeTypeと同じく、16.16の倍率で1/64ピクセル単位に丸めてから整数に丸める
-    int unitsToPixels(const stbtt_fontinfo& info, int units, int size)
+    int unitsToPixels(const stbtt_fontinfo& info, int units, double size)
     {
       const long long unitsPerEm = ttUSHORT(info.data + info.head + 18);
       if (unitsPerEm == 0)
       {
         return 0;
       }
-      const long long scale = ((static_cast<long long>(size) * 64 * 65536) + unitsPerEm / 2) / unitsPerEm;
+      const long long scale = std::llround(size * 64.0 * 65536.0 / static_cast<double>(unitsPerEm));
       const long long magnitude = (std::llabs(static_cast<long long>(units)) * scale + 0x8000) >> 16;
       const long long value = units < 0 ? -magnitude : magnitude;
       return static_cast<int>((value + 32) >> 6);
@@ -64,7 +65,7 @@ namespace Teller::Internal
     std::vector<unsigned char> bytes;
     stbtt_fontinfo info{};
 
-    [[nodiscard]] float scale(int size) const
+    [[nodiscard]] float scale(double size) const
     {
       return stbtt_ScaleForMappingEmToPixels(&info, static_cast<float>(size));
     }
@@ -100,13 +101,13 @@ namespace Teller::Internal
     return stbtt_FindGlyphIndex(&impl_->info, static_cast<int>(codepoint));
   }
 
-  int FontFile::kerning(int leftGlyph, int rightGlyph, int size) const
+  int FontFile::kerning(int leftGlyph, int rightGlyph, double size) const
   {
     const int units = stbtt_GetGlyphKernAdvance(&impl_->info, leftGlyph, rightGlyph);
     return unitsToPixels(impl_->info, units, size);
   }
 
-  LineMetrics FontFile::lineMetrics(int size, int outline) const
+  LineMetrics FontFile::lineMetrics(double size, int outline) const
   {
     const float scale = impl_->scale(size);
     int ascent = 0;
@@ -152,19 +153,26 @@ namespace Teller::Internal
     return metrics;
   }
 
-  GlyphBitmap FontFile::render(int glyph, int size, const GlyphStyle& style) const
+  GlyphBitmap FontFile::render(int glyph, double size, const GlyphStyle& style) const
   {
     stbtt_style stbStyle{};
     stbStyle.mono = style.antialias ? 0 : 1;
     stbStyle.slant = style.italic ? italicSlant : 0.0f;
     stbStyle.outline = static_cast<float>(style.outline);
 
-    // SDL3_ttfと同じく大きさの10分の1
-    const int embolden = style.bold ? size / 10 : 0;
+    // SDL3_ttfと同じく大きさの10分の1で、端数は切り捨てる
+    const int embolden = style.bold ? static_cast<int>(size / 10.0) : 0;
     stbStyle.embolden = embolden;
 
     GlyphBitmap result;
-    unsigned char* pixels = stbtt_GetGlyphEmbeddedBitmapStyled(&impl_->info, size, glyph, &stbStyle, &result.width, &result.height, &result.left, &result.top, &result.advance);
+    unsigned char* pixels = nullptr;
+
+    // 埋め込みのドット絵がないとadvanceが負になる
+    result.advance = -1;
+    if (size == std::floor(size) && size <= static_cast<double>((std::numeric_limits<int>::max)()))
+    {
+      pixels = stbtt_GetGlyphEmbeddedBitmapStyled(&impl_->info, static_cast<int>(size), glyph, &stbStyle, &result.width, &result.height, &result.left, &result.top, &result.advance);
+    }
     if (result.advance < 0)
     {
       const float scale = impl_->scale(size);

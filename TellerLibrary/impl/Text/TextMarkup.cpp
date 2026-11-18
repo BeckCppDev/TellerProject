@@ -6,9 +6,11 @@
 #include <charconv>
 #include <cmath>
 #include <cstddef>
+#include <iterator>
 #include <string>
 #include <system_error>
 #include <unordered_set>
+#include <vector>
 
 namespace Teller::Internal
 {
@@ -162,6 +164,12 @@ namespace Teller::Internal
       { "s", "speed" },
       { "w", "wait" },
       { "c", "color" },
+      { "e", "effect" },
+      { "sh", "shake" },
+      { "cr", "circle" },
+      { "bb", "bubble" },
+      { "af", "afterimage" },
+      { "sz", "size" },
     };
 
     bool isAbbreviation(std::string_view name)
@@ -313,6 +321,7 @@ namespace Teller::Internal
     };
 
     // 値を省略すると1px
+    // 小数は切り捨てる
     bool readOutlineWidth(const TagParts& parts, int& width)
     {
       if (!parts.hasValue)
@@ -322,11 +331,137 @@ namespace Teller::Internal
       }
       double number = 0.0;
       std::string_view unit;
-      if (!splitValue(parts.value, number, unit) || !(unit.empty() || unit == "px") || number != std::floor(number) || number > maxOutline)
+      if (!splitValue(parts.value, number, unit) || !(unit.empty() || unit == "px") || number > maxOutline)
       {
         return false;
       }
       width = static_cast<int>(number);
+      return true;
+    }
+
+    // 単位は省略でき、unitが空なら単位を書けない
+    bool readNumber(std::string_view item, std::string_view unit, bool allowNegative, double& number)
+    {
+      const std::size_t underscore = item.find('_');
+      const std::string_view digits = item.substr(0, underscore);
+      const char* last = digits.data() + digits.size();
+      const auto [end, error] = std::from_chars(digits.data(), last, number);
+      if (digits.empty() || error != std::errc() || end != last || !std::isfinite(number))
+      {
+        return false;
+      }
+      if (!allowNegative && number < 0.0)
+      {
+        return false;
+      }
+      if (underscore == std::string_view::npos)
+      {
+        return true;
+      }
+      return !unit.empty() && item.substr(underscore + 1) == unit;
+    }
+
+    // カンマで分け、前後の空白を除く
+    std::vector<std::string_view> splitItems(std::string_view values)
+    {
+      std::vector<std::string_view> items;
+      std::size_t start = 0;
+      while (start <= values.size())
+      {
+        const std::size_t comma = std::min(values.find(',', start), values.size());
+        items.push_back(trimSpaces(values.substr(start, comma - start)));
+        start = comma + 1;
+      }
+      return items;
+    }
+
+    // [effect=shake]と[shake]のどちらでも書ける演出
+    enum class EffectKind
+    {
+      shake,
+      circle,
+      bubble,
+      afterimage,
+    };
+
+    struct EffectName
+    {
+      std::string_view name;
+      EffectKind kind;
+    };
+
+    // 略称はtagAliasesで正式名称に直してから引く
+    constexpr EffectName effectNames[] = {
+      { "shake", EffectKind::shake },
+      { "circle", EffectKind::circle },
+      { "bubble", EffectKind::bubble },
+      { "afterimage", EffectKind::afterimage },
+    };
+
+    bool findEffect(std::string_view fullName, EffectKind& kind)
+    {
+      for (const EffectName& effect : effectNames)
+      {
+        if (fullName == effect.name)
+        {
+          kind = effect.kind;
+          return true;
+        }
+      }
+      return false;
+    }
+
+    // 値を省略したときの既定値
+    constexpr double defaultShake = 1.0;
+
+    // 本家の揺れの40番
+    constexpr TextCircle defaultCircle{ 2.0, 0.0, 20.0 };
+
+    // 本家の揺れの43番(敵の吹き出し)
+    constexpr TextCircle bubbleCircle{ 1.4, 30.0, 20.0 };
+
+    // 本家のアズリエル登場時の名前
+    constexpr TextAfterimage defaultAfterimage{ 24.0, 7 };
+
+    // 省略した後ろの値は既定値のまま残す
+    bool readCircle(const std::vector<std::string_view>& items, TextCircle& circle)
+    {
+      if (items.size() > 3)
+      {
+        return false;
+      }
+      if (!items.empty() && !readNumber(items[0], "px", false, circle.radius))
+      {
+        return false;
+      }
+      if (items.size() > 1 && !readNumber(items[1], "deg", true, circle.letterStep))
+      {
+        return false;
+      }
+      return items.size() <= 2 || readNumber(items[2], "deg", true, circle.turn);
+    }
+
+    bool readAfterimage(const std::vector<std::string_view>& items, TextAfterimage& look)
+    {
+      if (items.size() > 2)
+      {
+        return false;
+      }
+      if (!items.empty() && !readNumber(items[0], "px", false, look.spread))
+      {
+        return false;
+      }
+      if (items.size() < 2)
+      {
+        return true;
+      }
+      // 枚数の小数は切り捨てる
+      double layers = 0.0;
+      if (!readNumber(items[1], "", false, layers) || layers < 1.0 || layers >= maxAfterimageLayers + 1.0)
+      {
+        return false;
+      }
+      look.layers = static_cast<int>(layers);
       return true;
     }
 
@@ -353,6 +488,20 @@ namespace Teller::Internal
 
       // 一番下は白
       std::vector<TextColor> colors;
+
+      // 一番下はフォントの設定
+      std::vector<double> sizes;
+
+      // 開いた順に並べ、[/effect]で閉じる演出を決める
+      std::vector<EffectKind> openEffects;
+
+      // 重ねたときは内側の値を使う
+      std::vector<double> shakes;
+      std::vector<TextCircle> circles;
+      std::vector<TextAfterimage> afterimages;
+
+      // 値を持たないので開いている数だけ数える
+      int bubbleDepth = 0;
 
       // 1文字目の前には間隔を空けない
       bool hasLetter = false;
@@ -440,7 +589,118 @@ namespace Teller::Internal
         style.outline = outlines.back().width;
         style.outlineColor = outlines.back().color;
         style.color = colors.back();
+        style.size = sizes.back();
+        style.shake = shakes.empty() ? 0.0 : shakes.back();
+        if (!circles.empty())
+        {
+          style.circle = circles.back();
+        }
+        if (bubbleDepth > 0)
+        {
+          style.bubble = bubbleCircle;
+        }
+        if (!afterimages.empty())
+        {
+          style.afterimage = afterimages.back();
+        }
         return style;
+      }
+
+      // itemsは演出の名前の後ろに並べた値
+      void openEffect(EffectKind kind, const std::vector<std::string_view>& items, std::string_view body)
+      {
+        switch (kind)
+        {
+          case EffectKind::shake:
+          {
+            double amplitude = defaultShake;
+            if (items.size() > 1 || (items.size() == 1 && !readNumber(items[0], "px", false, amplitude)))
+            {
+              warnMarkup("[shake] needs a value like 3_px", body);
+              return;
+            }
+            shakes.push_back(amplitude);
+            break;
+          }
+          case EffectKind::circle:
+          {
+            TextCircle circle = defaultCircle;
+            if (!readCircle(items, circle))
+            {
+              warnMarkup("[circle] needs values like 2_px,10_deg,20_deg", body);
+              return;
+            }
+            circles.push_back(circle);
+            break;
+          }
+          case EffectKind::bubble:
+            if (!items.empty())
+            {
+              warnMarkup("[bubble] takes no value", body);
+              return;
+            }
+            ++bubbleDepth;
+            break;
+          case EffectKind::afterimage:
+          {
+            TextAfterimage look = defaultAfterimage;
+            if (!readAfterimage(items, look))
+            {
+              warnMarkup("[afterimage] needs values like 24_px,7", body);
+              return;
+            }
+            afterimages.push_back(look);
+            break;
+          }
+        }
+        openEffects.push_back(kind);
+      }
+
+      // 最後に開いたkindの演出を閉じる
+      // 開いていなければfalseを返す
+      bool closeEffect(EffectKind kind)
+      {
+        const auto found = std::find(openEffects.rbegin(), openEffects.rend(), kind);
+        if (found == openEffects.rend())
+        {
+          return false;
+        }
+        openEffects.erase(std::next(found).base());
+        switch (kind)
+        {
+          case EffectKind::shake:
+            shakes.pop_back();
+            break;
+          case EffectKind::circle:
+            circles.pop_back();
+            break;
+          case EffectKind::bubble:
+            --bubbleDepth;
+            break;
+          case EffectKind::afterimage:
+            afterimages.pop_back();
+            break;
+        }
+        return true;
+      }
+
+      // [effect=shake,3_px]の形
+      void applyEffectTag(std::string_view body, const TagParts& parts)
+      {
+        if (!parts.hasValue)
+        {
+          warnMarkup("[effect] needs an effect name like [effect=shake]", body);
+          return;
+        }
+        std::vector<std::string_view> items = splitItems(parts.value);
+        EffectKind kind{};
+        if (!findEffect(fullTagName(items.front()), kind))
+        {
+          warnMarkup("unknown effect", body);
+          return;
+        }
+        items.erase(items.begin());
+        openEffect(kind, items, body);
       }
 
       // 値を持たない見た目のタグでなければnullptr
@@ -488,7 +748,25 @@ namespace Teller::Internal
       void applyClosingTag(std::string_view body)
       {
         const std::string_view name = fullTagName(body.substr(1));
-        if (name == "speed" || name == "outline" || name == "color")
+        if (name == "effect")
+        {
+          if (openEffects.empty())
+          {
+            warnMarkup("closing tag without opening tag", body);
+            return;
+          }
+          closeEffect(openEffects.back());
+          return;
+        }
+        if (EffectKind kind{}; findEffect(name, kind))
+        {
+          if (!closeEffect(kind))
+          {
+            warnMarkup("closing tag without opening tag", body);
+          }
+          return;
+        }
+        if (name == "speed" || name == "outline" || name == "color" || name == "size")
         {
           auto pop = [&body](auto& stack)
           {
@@ -508,6 +786,10 @@ namespace Teller::Internal
           else if (name == "outline")
           {
             pop(outlines);
+          }
+          else if (name == "size")
+          {
+            pop(sizes);
           }
           else
           {
@@ -562,7 +844,7 @@ namespace Teller::Internal
             }
             if (!readOutlineWidth(parts, width))
             {
-              warnMarkup("[outline] needs a whole number like 1_px", body);
+              warnMarkup("[outline] needs a value like 1_px", body);
               return;
             }
             hasOutline = true;
@@ -609,14 +891,39 @@ namespace Teller::Internal
           applyClosingTag(body);
           return;
         }
+
+        const TagParts parts = splitTag(body);
+        const std::string_view name = fullTagName(parts.name);
+
+        // 演出の値のカンマを縁と色の区切りと取り違えないよう先に調べる
+        if (name == "effect")
+        {
+          applyEffectTag(body, parts);
+          return;
+        }
+        if (EffectKind kind{}; findEffect(name, kind))
+        {
+          openEffect(kind, parts.hasValue ? splitItems(parts.value) : std::vector<std::string_view>(), body);
+          return;
+        }
+
         if (body.find(',') != std::string_view::npos)
         {
           applyOutlineWithColor(body);
           return;
         }
 
-        const TagParts parts = splitTag(body);
-        const std::string_view name = fullTagName(parts.name);
+        if (name == "size")
+        {
+          double number = 0.0;
+          if (!parts.hasValue || !readNumber(parts.value, "px", false, number) || !(number > 0.0) || number > maxFontSize)
+          {
+            warnMarkup("[size] needs a value greater than 0 like 24_px", body);
+            return;
+          }
+          sizes.push_back(number);
+          return;
+        }
 
         if (name == "speed")
         {
@@ -668,7 +975,7 @@ namespace Teller::Internal
           int width = 0;
           if (!readOutlineWidth(parts, width))
           {
-            warnMarkup("[outline] needs a whole number like 1_px", body);
+            warnMarkup("[outline] needs a value like 1_px", body);
             return;
           }
           // 色は外側の縁の色を引き継ぐ
@@ -721,6 +1028,7 @@ namespace Teller::Internal
     reader.baseStyle = baseStyle;
     reader.outlines.push_back({ baseStyle.outline, baseStyle.outlineColor });
     reader.colors.push_back(baseStyle.color);
+    reader.sizes.push_back(baseStyle.size);
     reader.markup = text;
     reader.values = values;
 
@@ -784,6 +1092,15 @@ namespace Teller::Internal
 
     reader.script.end = reader.cursor;
     return reader.script;
+  }
+
+  double clampFontSize(double size)
+  {
+    if (!(size > 0.0))
+    {
+      return 0.0;
+    }
+    return std::min(size, maxFontSize);
   }
 
   std::uint64_t momentToFrames(const TextMoment& moment, int fps)

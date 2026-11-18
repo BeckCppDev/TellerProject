@@ -17,7 +17,10 @@ namespace Teller::Internal
   struct GlyphKey
   {
     int glyph = 0;
-    int size = 0;
+
+    // 1emのピクセル数
+    double size = 0.0;
+
     GlyphStyle style;
 
     [[nodiscard]] bool operator==(const GlyphKey&) const noexcept = default;
@@ -32,7 +35,7 @@ namespace Teller::Internal
       {
         hash ^= value + 0x9E3779B97F4A7C15ull + (hash << 6) + (hash >> 2);
       };
-      mix(std::hash<int>{}(key.size));
+      mix(std::hash<double>{}(key.size));
       mix(std::hash<int>{}(key.style.outline));
       mix((key.style.antialias ? 1u : 0u) | (key.style.bold ? 2u : 0u) | (key.style.italic ? 4u : 0u));
       return hash;

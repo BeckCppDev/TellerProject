@@ -4,6 +4,7 @@
 #include <Teller/Smooth/Progress.hpp>
 #include <Teller/Units/Anchor.hpp>
 #include <Teller/Units/Color.hpp>
+#include <Teller/Units/FrameRate.hpp>
 #include <Teller/Units/LetterRate.hpp>
 #include <Teller/Units/Length.hpp>
 #include <Teller/Units/Position.hpp>
@@ -125,7 +126,7 @@ namespace Teller
   {
     AssetPath path;
 
-    // 1emのピクセル数
+    // 1emのピクセル数で、小数も受け付ける
     Length size = 16;
 
     // 1文字ずつ出す速さ
@@ -144,17 +145,24 @@ namespace Teller
     bool strikethrough = false;
 
     // 0なら縁取りなし
+    // 小数は0の方向へ切り捨てる
     Length outline = 0;
     Color outlineColor = Color::black;
 
     // Text::show()とFont::show()で寄せ方を省略したときの寄せ方
     Anchor anchor = Anchor::topLeft;
+
+    // [shake]などの演出が動く頻度
+    // 省略するとlogicの周期ごとに動き、logicより高くしてもlogicの周期ごとまでしか動かない
+    // 低くすると、動かない周期は前の位置のまま描く
+    std::optional<FrameRate> effectRate;
   };
 
   // Font::text()に渡す設定
   // 指定しなかった項目はフォントの設定を使う
   struct TextConfig
   {
+    // 小数も受け付ける
     std::optional<Length> size;
   };
 
@@ -215,12 +223,17 @@ namespace Teller
   private:
     friend class Font;
 
-    Text(const std::weak_ptr<Internal::FontData>& data, std::shared_ptr<const Internal::TextSource> source, int size, bool antialias, Anchor anchor);
+    // effectFpsは演出が動く頻度で、0ならlogicの周期
+    Text(const std::weak_ptr<Internal::FontData>& data, std::shared_ptr<const Internal::TextSource> source, bool antialias, Anchor anchor, int effectFps);
 
     Progress showWithValues(Position position, Anchor anchor, std::vector<Internal::TextValue> values);
 
     // 出す文字の数を返す
     std::size_t advance();
+
+    // 演出の周期が進んでいれば、揺れと残像のでたらめなずれを決め直す
+    // フォントの有無で乱数の並びが変わらないよう、フォントを調べる前に呼ぶ
+    void updateEffects();
 
     std::weak_ptr<Internal::FontData> data_;
 
@@ -234,12 +247,22 @@ namespace Teller
     // script_を作ったときの値
     std::vector<Internal::TextValue> values_;
 
-    // {}の数の警告は最初のshow()で読み直すときに出す
-    bool parsedForShow_ = false;
-
-    int size_ = 16;
     bool antialias_ = false;
     Anchor anchor_ = Anchor::topLeft;
+
+    // 0ならlogicの周期
+    int effectFps_ = 0;
+
+    // ずれを最後に決めた演出の周期の通し番号
+    std::uint64_t effectTick_ = 0;
+    bool hasEffectTick_ = false;
+
+    // 文字ごとの[shake]のずれをx、yの順に並べる
+    std::vector<double> shakeOffsets_;
+
+    // 残像の1枚ごとの-1から1のずれをx、yの順に並べる
+    // 同じ1枚の中では全ての文字が同じだけずれる
+    std::vector<double> afterimageOffsets_;
 
     Progress progress_ = Progress::started;
 
@@ -274,12 +297,26 @@ namespace Teller
     // 単位はsec、ms、framesで、省略すると秒
     // [bold](略称[b])、[italic]([i])、[underline]([u])、[strikethrough]([st])は閉じるまで見た目を変える
     // [outline=2_px]([o2])は閉じるまで縁取りし、値を省略すると1px
+    //   太さの小数は0の方向へ切り捨てる
     // [color=red]([red]、[c=red])は[/color]か[/c]で閉じるまで文字の色を変え、色はColorの定数の名前か#FF0000
     // [color=green,outline=2_px]は縁の色と太さを変えて[/outline]で閉じ、並びは自由
     // 略称では色の項目名を省いて[o2,green]と書ける
     // 色にrainbowと書くと2秒で色合いが一周する([rainbow]、[o2,rainbow])
     // 閉じタグは正式名称と略称のどちらでもよく、[b]を[/bold]で閉じられる
     // [speed]は[s15]、[wait]は[w0.5]と略せる
+    // [size=24_px]([sz24])は[/size]で閉じるまで文字の大きさを変え、小数も受け付ける
+    //   同じ行の文字は下の基準線でそろい、行の高さはまだ出していない文字も含めてその行でいちばん大きい文字に合わせる
+    // 動きのある演出は[effect=shake,3_px]([e=sh,3])と[shake=3_px]([sh3])のどちらでも書ける
+    //   値はカンマで並べ、順番は固定で、後ろの値と単位は省略できる
+    //   [/effect]は最後に開いた演出を閉じ、[/shake]などの名前でも閉じられる
+    //   演出は文字の描く位置だけを動かし、文全体の箱は動かさない
+    // [shake=3_px]([sh])は文字ごとにでたらめに震え、値は片側の幅で、省略すると1px
+    // [circle=2_px,10_deg,20_deg]([cr])は円を描いて揺れる
+    //   値は半径、1文字ごとの角度のずれ、演出の1周期ごとに回る角度で、省略すると2px、0度、20度
+    // [bubble]([bb])は本家の敵の吹き出しの揺れで、半径1.4px、1文字ごとに30度、1周期に20度
+    // [afterimage=24_px,7]([af])は文字を薄くずらしながら重ねる
+    //   値はいちばん外側の1枚が片側にずれる幅と枚数で、省略すると本家のアズリエル登場時の名前と同じ24pxと7枚
+    // 揺れと残像のでたらめな値はTeller::randomから取る
     // [[と]]は角括弧そのもの
     // {}にはText::show()に渡した値が出てきた順に入る
     // 値の中の[と]はタグとして読まない
@@ -332,7 +369,7 @@ namespace Teller
 
     // Assetの破棄を検出するため、延命しない弱い参照で持つ
     std::weak_ptr<Internal::FontData> data_;
-    int size_ = 16;
+    double size_ = 16.0;
     double speed_ = 0.0;
     bool antialias_ = false;
     bool bold_ = false;
@@ -342,6 +379,9 @@ namespace Teller
     int outline_ = 0;
     std::uint32_t outlineColor_ = 0;
     Anchor anchor_ = Anchor::topLeft;
+
+    // 0ならlogicの周期
+    int effectFps_ = 0;
 
     // 1周期に渡す文字列は数個なので順に探す
     std::vector<ShownText> shownTexts_;
