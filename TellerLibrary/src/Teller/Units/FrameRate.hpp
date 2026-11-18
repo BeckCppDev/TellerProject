@@ -30,6 +30,21 @@ namespace Teller
       return fps_;
     }
 
+    // 1フレームの長さ
+    // 小数点以下は切り捨てる
+    // 0以下のfpsでは0を返す
+    [[nodiscard]] constexpr int ms() const noexcept
+    {
+      return fps_ > 0 ? 1000 / fps_ : 0;
+    }
+
+    // 1フレームの長さ
+    // 0以下のfpsでは0を返す
+    [[nodiscard]] constexpr double sec() const noexcept
+    {
+      return fps_ > 0 ? 1.0 / static_cast<double>(fps_) : 0.0;
+    }
+
     [[nodiscard]] constexpr bool operator==(const FrameRate&) const noexcept = default;
 
   private:

@@ -28,6 +28,12 @@ namespace Teller::Internal
     };
     PacingState pacing;
 
+    // 呼ぶたびに警告が出ないよう、validFps()と分けて警告しない
+    FrameRate usableRate(FrameRate rate)
+    {
+      return rate.fps() > 0 ? rate : FrameRate(defaultFps);
+    }
+
     int validFps(FrameRate rate)
     {
       if (rate.fps() > 0)
@@ -80,6 +86,11 @@ namespace Teller
     Internal::pacing = {};
     Internal::setClockActive(false);
     Internal::setEventsHandledByLoop(false);
+  }
+
+  LoopCycle LoopController::getCycle() const
+  {
+    return LoopCycle(Internal::usableRate(config_.logic), Internal::usableRate(config_.display));
   }
 
   void LoopController::update()

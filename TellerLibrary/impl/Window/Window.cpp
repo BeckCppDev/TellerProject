@@ -445,7 +445,9 @@ namespace Teller
     else if (config.resizeMode == Resize::scale)
     {
       // ゲーム画面の座標のまま描くと、SDL3が拡大と黒い帯の処理を行う
-      SDL_SetRenderLogicalPresentation(state_->renderer, state_->gameWidth, state_->gameHeight, SDL_LOGICAL_PRESENTATION_LETTERBOX);
+      // ドット絵の点をそろえるため整数倍に限る
+      // ゲーム画面より小さいウインドウでは1倍のまま端が切れる
+      SDL_SetRenderLogicalPresentation(state_->renderer, state_->gameWidth, state_->gameHeight, SDL_LOGICAL_PRESENTATION_INTEGER_SCALE);
     }
     Internal::addDrawListener(*state_);
 
