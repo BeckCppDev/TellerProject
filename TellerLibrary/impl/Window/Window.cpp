@@ -1,4 +1,5 @@
 #include <Window/WindowInternal.hpp>
+#include <Audio/AudioBus.hpp>
 #include <Loop/ClockInternal.hpp>
 #include <Teller/Asset/Asset.hpp>
 #include <Teller/Loop/Quit.hpp>
@@ -487,6 +488,7 @@ namespace Teller
     if (!Internal::eventsHandledByLoop)
     {
       Internal::deliverDraw();
+      Internal::discardAudio();
       Internal::processEvents();
     }
     return state_->handle != nullptr;

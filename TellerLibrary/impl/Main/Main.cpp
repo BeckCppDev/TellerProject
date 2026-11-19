@@ -1,3 +1,4 @@
+#include <Audio/AudioBus.hpp>
 #include <Graphics/DrawBus.hpp>
 #include <Window/WindowInternal.hpp>
 
@@ -16,6 +17,7 @@ int main()
     if (!Teller::Internal::areEventsHandledByLoop())
     {
       Teller::Internal::deliverDraw();
+      Teller::Internal::discardAudio();
       Teller::Internal::processEvents();
     }
   }

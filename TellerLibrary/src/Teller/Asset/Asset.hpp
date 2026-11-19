@@ -3,6 +3,7 @@
 #include <Teller/Asset/AssetPath.hpp>
 #include <Teller/Asset/Font.hpp>
 #include <Teller/Asset/Image.hpp>
+#include <Teller/Asset/Sound.hpp>
 
 #include <memory>
 
@@ -21,7 +22,7 @@ namespace Teller
 
   // 画像などのアセットをまとめて持つ
   // 指定したアセットはこのインスタンスの破棄とともに全て消える
-  // 描くにはWindow::subscribe()で購読する
+  // 描くにはWindow::subscribe()で、鳴らすにはAudio::subscribe()で購読する
   class Asset
   {
   public:
@@ -44,8 +45,14 @@ namespace Teller
     virtual Font font(AssetPath path);
     virtual Font font(FontConfig config);
 
-    // このAssetの画像へのshow()を確定する
-    // 確定しなかったshow()は描かれない
+    // 音を指定する
+    // ファイルはSound::load()か最初のSound::play()で読む
+    // パスの扱いはimage()と同じ
+    virtual Sound audio(AssetPath path);
+    virtual Sound audio(SoundConfig config);
+
+    // このAssetの画像へのshow()と音へのplay()を確定する
+    // 確定しなかったshow()は描かれず、play()は鳴らない
     // Assetをまたいだ重なりは、先に呼んだものが奥になる
     virtual void update();
 

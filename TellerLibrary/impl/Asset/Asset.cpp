@@ -2,6 +2,7 @@
 
 #include <Asset/AssetFiles.hpp>
 #include <Asset/FontData.hpp>
+#include <Audio/AudioBus.hpp>
 #include <Graphics/DrawBus.hpp>
 
 #include <SDL3/SDL.h>
@@ -17,6 +18,7 @@ namespace Teller::Internal
     // キーは、書かれたパスをimage()やfont()を書いたcppのフォルダで補ったもの
     std::unordered_map<std::string, std::shared_ptr<ImageData>> images;
     std::unordered_map<std::string, std::shared_ptr<FontData>> fonts;
+    std::unordered_map<std::string, std::shared_ptr<SoundData>> sounds;
   };
 
   std::filesystem::path toPath(std::string_view utf8)
@@ -93,6 +95,7 @@ namespace Teller
   Asset::~Asset()
   {
     Internal::notifySourceReleased(this);
+    Internal::notifyAudioSourceReleased(this);
   }
 
   // コンストラクタを定数初期化にするため、最初に使うときに作る
@@ -141,9 +144,31 @@ namespace Teller
     return Font(found->second, config);
   }
 
+  Sound Asset::audio(AssetPath path)
+  {
+    return audio(SoundConfig{ .path = path });
+  }
+
+  // グローバル変数の初期化で呼ばれるのでファイルには触らない
+  Sound Asset::audio(SoundConfig config)
+  {
+    const Internal::WrittenPath written = Internal::toWrittenPath(config.path);
+
+    auto& sounds = state().sounds;
+    if (const auto found = sounds.find(written.key); found != sounds.end())
+    {
+      return Sound(found->second);
+    }
+
+    const auto data = std::make_shared<Internal::SoundData>(this, written.writtenPath, written.sourceDirectory);
+    sounds.emplace(written.key, data);
+    return Sound(data);
+  }
+
   void Asset::update()
   {
     Internal::commitDraw(this);
+    Internal::commitPlay(this);
   }
 
   Image::Image(const std::shared_ptr<Internal::ImageData>& data)

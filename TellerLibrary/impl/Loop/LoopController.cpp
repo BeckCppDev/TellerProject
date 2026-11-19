@@ -1,5 +1,6 @@
 #include <Teller/Loop/LoopController.hpp>
 
+#include <Audio/AudioBus.hpp>
 #include <Graphics/DrawBus.hpp>
 #include <Loop/ClockInternal.hpp>
 #include <Smooth/Transition.hpp>
@@ -105,6 +106,10 @@ namespace Teller
 
     // 待つ前に描き、処理の直後に画面へ出す
     Internal::deliverDraw();
+
+    // 1周期分の音を作って出力機器へ送る
+    // 長さは実時間ではなくlogicのfpsで決まるので、作る音は決定的になる
+    Internal::deliverAudio();
 
     Internal::PacingState& pacing = Internal::pacing;
     const Uint64 now = SDL_GetTicksNS();

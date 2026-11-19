@@ -11,6 +11,8 @@ target_sources(TellerLibrary
       src/Teller/Asset/AssetPath.hpp
       src/Teller/Asset/Font.hpp
       src/Teller/Asset/Image.hpp
+      src/Teller/Asset/Sound.hpp
+      src/Teller/Audio/Audio.hpp
       src/Teller/Loop/LoopController.hpp
       src/Teller/Loop/Quit.hpp
       src/Teller/Loop/Timer.hpp
@@ -36,6 +38,10 @@ target_sources(TellerLibrary
     impl/Asset/AssetFiles.hpp
     impl/Asset/Font.cpp
     impl/Asset/FontData.hpp
+    impl/Audio/Audio.cpp
+    impl/Audio/AudioBus.cpp
+    impl/Audio/AudioBus.hpp
+    impl/Audio/Sound.cpp
     impl/Graphics/DrawBus.cpp
     impl/Graphics/DrawBus.hpp
     impl/Loop/ClockInternal.hpp
