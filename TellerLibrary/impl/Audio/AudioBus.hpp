@@ -3,6 +3,7 @@
 #include <SDL3/SDL.h>
 #include <SDL3_mixer/SDL_mixer.h>
 
+#include <cstdint>
 #include <filesystem>
 #include <memory>
 #include <span>
@@ -73,6 +74,17 @@ namespace Teller::Internal
   // 失敗したときはログを出してfalseを返す
   bool initMixerLibrary();
 
+  // Sound::getPosition()とSound::isFinished()が返す値
+  struct PlaybackStatus
+  {
+    std::int64_t positionMicroseconds = 0;
+    bool finished = false;
+  };
+
+  // 直前の周期の終わりの値を返す
+  // 一度も鳴らしていない音は0とfalse
+  [[nodiscard]] PlaybackStatus playbackStatus(const SoundData* sound);
+
   // 確定した指示から1周期分の音を作り、指示を捨てる
   // 戻り値は48000Hzのステレオで、左右を交互に並べる
   // 出力機器には送らない
@@ -85,7 +97,7 @@ namespace Teller::Internal
   // 音を作らずに指示を捨てる
   void discardAudio();
 
-  // 音や送り主が消える前に、Audioが持つ関連の資源を片付ける
+  // 音や送り主が消える前に、その音を読み出す資源とAudioが持つ関連の資源を片付ける
   void releaseSoundVoices(const SoundData* sound);
   void releaseSourceSubscriptions(const void* source);
 }

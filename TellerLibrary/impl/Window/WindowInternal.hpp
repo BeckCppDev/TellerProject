@@ -3,6 +3,7 @@
 #include <Teller/Window/Window.hpp>
 
 #include <Graphics/DrawBus.hpp>
+#include <Smooth/SmoothRate.hpp>
 #include <Smooth/Transition.hpp>
 
 #include <SDL3/SDL.h>
@@ -38,6 +39,9 @@ namespace Teller::Internal
 
     bool isFullscreen = false;
     bool videoInitialized = false;
+
+    // config.smoothRateではなくこちらを使う
+    SmoothRateSetting smoothRate{ "Teller::Window" };
 
     Transition widthTransition;
     Transition heightTransition;

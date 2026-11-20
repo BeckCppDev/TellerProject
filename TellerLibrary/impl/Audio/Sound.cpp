@@ -22,6 +22,7 @@ namespace Teller::Internal
     const std::string resolved = resolveAssetPath(sound.writtenPath, sound.sourceDirectory);
 
     // 長い曲でメモリを使いすぎないよう、ファイル全体を展開しない
+    // 現状の問題点：リリースビルドでもファイルから読み、実行ファイルに埋め込まない
     sound.audio = MIX_LoadAudio(nullptr, resolved.c_str(), false);
     if (sound.audio == nullptr)
     {
@@ -108,5 +109,22 @@ namespace Teller
     }
     Internal::publishPlay(data);
     return Internal::PlayRequest(data.get());
+  }
+
+  // 何も指定していないSoundとAssetの破棄後は0とfalseを返す
+  Duration Sound::getPosition() const
+  {
+    const std::shared_ptr<Internal::SoundData> data = data_.lock();
+    if (data == nullptr)
+    {
+      return Duration::fromMicroseconds(0);
+    }
+    return Duration::fromMicroseconds(Internal::playbackStatus(data.get()).positionMicroseconds);
+  }
+
+  bool Sound::isFinished() const
+  {
+    const std::shared_ptr<Internal::SoundData> data = data_.lock();
+    return data != nullptr && Internal::playbackStatus(data.get()).finished;
   }
 }

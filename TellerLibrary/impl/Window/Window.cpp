@@ -134,24 +134,6 @@ namespace Teller::Internal
       }
     }
 
-    int effectiveSmoothFps(const WindowState& state)
-    {
-      return state.config.smoothRate ? state.config.smoothRate->fps() : clockFps();
-    }
-
-    // 0以下の頻度は指定がなかったものとして扱う
-    std::optional<FrameRate> validSmoothRate(std::optional<FrameRate> rate)
-    {
-      if (!rate || rate->fps() > 0)
-      {
-        return rate;
-      }
-#ifndef NDEBUG
-      SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Teller::Window: smoothRate must be greater than 0, so logic is used");
-#endif
-      return std::nullopt;
-    }
-
     Transition::Handlers makeHandlers(WindowState& state, int OsWindowState::*axis, void (*apply)(WindowState&, int))
     {
       return {
@@ -169,7 +151,7 @@ namespace Teller::Internal
         },
         .fps = [&state]
         {
-          return effectiveSmoothFps(state);
+          return state.smoothRate.fps();
         },
       };
     }
@@ -359,7 +341,7 @@ namespace Teller
     : state_(std::make_unique<Internal::WindowState>())
   {
     state_->config = config;
-    state_->config.smoothRate = Internal::validSmoothRate(config.smoothRate);
+    state_->smoothRate.set(config.smoothRate);
   }
 
   Window::~Window()
@@ -584,16 +566,16 @@ namespace Teller
 
   FrameRate Window::getSmoothRate() const
   {
-    return Internal::effectiveSmoothFps(*state_);
+    return state_->smoothRate.fps();
   }
 
   void Window::setSmoothRate(FrameRate rate)
   {
-    state_->config.smoothRate = Internal::validSmoothRate(rate);
+    state_->smoothRate.set(rate);
   }
 
   void Window::resetSmoothRate()
   {
-    state_->config.smoothRate.reset();
+    state_->smoothRate.reset();
   }
 }

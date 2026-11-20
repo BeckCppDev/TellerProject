@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Teller/Asset/AssetPath.hpp>
+#include <Teller/Units/Duration.hpp>
 
 #include <memory>
 
@@ -48,6 +49,9 @@ namespace Teller
   // 同じ音を同時に重ねて鳴らすことはできない
   // コピーしたSoundと、同じパスを指定したSoundも同じ音として扱う
   // 1周期に何回play()を呼んでも1回分になる
+  // 現状の問題点
+  // 重ねて鳴らせないので、文字ごとの声や連打する効果音のように、鳴り終わる前に同じ音を鳴らし直す用途では前の音が途切れる
+  // .fromStart()とPlayRequestは仮の形で、ライブラリの作り直しで見直す
   class Sound
   {
   public:
@@ -63,6 +67,16 @@ namespace Teller
     // 読み込んでいなければ初回だけ読む
     // Asset::update()で確定するまで鳴らない
     Internal::PlayRequest play() const;
+
+    // 直前のLoopController::update()までに鳴らした位置を、ファイルの先頭からの時間で返す
+    // .loop()で繰り返しているときは、先頭に戻るたびに0から数え直す
+    // play()を呼ばなかった周期があると0に戻る
+    // Audioで購読していなくても、play()を呼んでいれば進む
+    [[nodiscard]] Duration getPosition() const;
+
+    // .loop()なしで最後まで鳴り、その後もplay()を呼び続けている間だけtrueを返す
+    // play()を呼ばなかった周期があるか、.fromStart()で鳴らし直すとfalseに戻る
+    [[nodiscard]] bool isFinished() const;
 
   private:
     friend class Asset;

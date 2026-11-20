@@ -52,6 +52,8 @@ target_sources(TellerLibrary
     impl/Main/Main.cpp
     impl/Random/Random.cpp
     impl/Smooth/Change.cpp
+    impl/Smooth/SmoothRate.cpp
+    impl/Smooth/SmoothRate.hpp
     impl/Smooth/Transition.cpp
     impl/Smooth/Transition.hpp
     impl/Text/FontFile.cpp
