@@ -26,6 +26,9 @@ namespace Teller::Internal
     SDL_Window* handle = nullptr;
     SDL_Renderer* renderer = nullptr;
 
+    // キーをInputへ渡すときの送り元
+    const Window* owner = nullptr;
+
     // 最初のcreate()の時点の大きさをゲーム画面の大きさとして固定する
     // setWidth()などはウインドウの大きさだけを変える
     int gameWidth = 0;

@@ -7,6 +7,8 @@
 #include <Teller/Asset/Image.hpp>
 #include <Teller/Asset/Sound.hpp>
 #include <Teller/Audio/Audio.hpp>
+#include <Teller/Input/ButtonState.hpp>
+#include <Teller/Input/Input.hpp>
 #include <Teller/Loop/LoopController.hpp>
 #include <Teller/Loop/Quit.hpp>
 #include <Teller/Loop/Timer.hpp>

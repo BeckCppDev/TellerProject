@@ -1,5 +1,6 @@
 #include <Window/WindowInternal.hpp>
 #include <Audio/AudioBus.hpp>
+#include <Input/InputBus.hpp>
 #include <Loop/ClockInternal.hpp>
 #include <Teller/Asset/Asset.hpp>
 #include <Teller/Loop/Quit.hpp>
@@ -81,6 +82,9 @@ namespace Teller::Internal
       state.yTransition.cancel();
 
       removeDrawListener(state);
+
+      // 閉じた後に届く通知はウインドウを特定できず捨てるので、ここで離したことにする
+      releaseWindowKeys(state.owner);
 
       // GPU上の画像はレンダラーの破棄で消えるので、一覧だけを空にする
       state.textures.clear();
@@ -304,15 +308,31 @@ namespace Teller::Internal
           break;
         }
         case SDL_EVENT_KEY_DOWN:
+        case SDL_EVENT_KEY_UP:
         {
-          if (event.key.key != SDLK_F4 || event.key.repeat)
+          if (event.key.repeat)
           {
             break;
           }
           WindowState* state = findState(event.key.windowID);
-          if (state != nullptr && state->config.allowFullscreenToggle)
+          if (state == nullptr)
+          {
+            break;
+          }
+          receiveKey(state->owner, event.key.scancode, event.key.down);
+          if (event.key.down && event.key.key == SDLK_F4 && state->config.allowFullscreenToggle)
           {
             applyFullscreen(*state, state->isFullscreen ? FullscreenMode::windowed : FullscreenMode::borderless);
+          }
+          break;
+        }
+        case SDL_EVENT_WINDOW_FOCUS_LOST:
+        {
+          // SDL3はSDLのウインドウ間でフォーカスが移っても離した通知を送らず、後の離した通知は移った先のウインドウIDで届く
+          // そのためフォーカスを失った時点で離したことにする
+          if (WindowState* state = findState(event.window.windowID))
+          {
+            releaseWindowKeys(state->owner);
           }
           break;
         }
@@ -341,6 +361,7 @@ namespace Teller
     : state_(std::make_unique<Internal::WindowState>())
   {
     state_->config = config;
+    state_->owner = this;
     state_->smoothRate.set(config.smoothRate);
   }
 
@@ -350,6 +371,7 @@ namespace Teller
     {
       Internal::closeWindow(*state_);
     }
+    Internal::releaseInputSubscriptions(this);
     if (state_->videoInitialized)
     {
       SDL_QuitSubSystem(SDL_INIT_VIDEO);

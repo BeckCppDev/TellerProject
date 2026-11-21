@@ -13,6 +13,8 @@ target_sources(TellerLibrary
       src/Teller/Asset/Image.hpp
       src/Teller/Asset/Sound.hpp
       src/Teller/Audio/Audio.hpp
+      src/Teller/Input/ButtonState.hpp
+      src/Teller/Input/Input.hpp
       src/Teller/Loop/LoopController.hpp
       src/Teller/Loop/Quit.hpp
       src/Teller/Loop/Timer.hpp
@@ -44,6 +46,8 @@ target_sources(TellerLibrary
     impl/Audio/Sound.cpp
     impl/Graphics/DrawBus.cpp
     impl/Graphics/DrawBus.hpp
+    impl/Input/Input.cpp
+    impl/Input/InputBus.hpp
     impl/Loop/ClockInternal.hpp
     impl/Loop/LoopController.cpp
     impl/Loop/Quit.cpp
